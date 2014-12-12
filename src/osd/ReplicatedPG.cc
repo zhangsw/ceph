@@ -9846,7 +9846,7 @@ void ReplicatedPG::mark_all_unfound_lost(
     void operator()() {
       pg->requeue_ops(pg->waiting_for_all_missing);
       pg->waiting_for_all_missing.clear();
-      pg->osd->queue_for_recovery(pg);
+      pg->queue_recovery();
     }
   };
   submit_log_entries(
@@ -9987,7 +9987,6 @@ void ReplicatedPG::on_shutdown()
   dout(10) << "on_shutdown" << dendl;
 
   // remove from queues
-  osd->recovery_wq.dequeue(this);
   osd->pg_stat_queue_dequeue(this);
   osd->dequeue_pg(this, 0);
   osd->peering_wq.dequeue(this);
