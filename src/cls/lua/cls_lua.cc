@@ -259,7 +259,7 @@ static int clslua_opresult(lua_State *L, int ok, int ret, int nargs,
 
   /* push error message */
   if (!error_on_stack)
-    lua_pushfstring(L, "%s", strerror(ret));
+    lua_pushfstring(L, "%s", strerror(-ret));
 
   return lua_error(L);
 }
