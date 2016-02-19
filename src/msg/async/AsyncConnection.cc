@@ -181,8 +181,11 @@ AsyncConnection::AsyncConnection(CephContext *cct, AsyncMessenger *m, EventCente
     write_lock("AsyncConnection::write_lock"), can_write(WriteStatus::NOWRITE),
     open_write(false), keepalive(false), lock("AsyncConnection::lock"), recv_buf(NULL),
     recv_max_prefetch(MIN(msgr->cct->_conf->ms_tcp_prefetch_max_size, TCP_PREFETCH_MIN_SIZE)),
-    recv_start(0), recv_end(0), got_bad_auth(false), authorizer(NULL), replacing(false),
-    is_reset_from_peer(false), once_ready(false), state_buffer(NULL), state_offset(0), net(cct), center(c)
+    recv_start(0), recv_end(0), msg_left(0), got_bad_auth(false), authorizer(NULL), replacing(false),
+    is_reset_from_peer(false), once_ready(false), state_buffer(NULL), state_offset(0), net(cct), center(c) 
+#if !defined(MSG_NOSIGNAL) && !defined(SO_NOSIGPIPE)
+    , sigpipe_pending(false), sigpipe_unblock(false)
+#endif
 {
   read_handler = new C_handle_read(this);
   write_handler = new C_handle_write(this);
