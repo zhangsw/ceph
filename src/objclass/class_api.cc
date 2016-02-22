@@ -606,12 +606,12 @@ int cls_cxx_map_remove_key(cls_method_context_t hctx, const string &key)
   return (*pctx)->pg->do_osd_ops(*pctx, ops);
 }
 
-int cls_gen_random_bytes(char *buf, int size)
+int cls_gen_random_bytes(char *buf, size_t size)
 {
   return get_random_bytes(buf, size);
 }
 
-int cls_gen_rand_base64(char *dest, int size) /* size should be the required string size + 1 */
+int cls_gen_rand_base64(char *dest, size_t size) /* size should be the required string size + 1 */
 {
   char buf[size];
   char tmp_dest[size + 4]; /* so that there's space for the extra '=' characters, and some */

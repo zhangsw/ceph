@@ -483,7 +483,7 @@ public:
 
 static const char alphanum_table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-int gen_rand_alphanumeric(char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric(char *dest, size_t size) /* size should be the required string size + 1 */
 {
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
@@ -491,7 +491,7 @@ int gen_rand_alphanumeric(char *dest, int size) /* size should be the required s
     return -1;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_table[pos & 63];

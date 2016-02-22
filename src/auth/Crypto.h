@@ -143,7 +143,7 @@ public:
   static CryptoHandler *create(int type);
 };
 
-extern int get_random_bytes(char *buf, int len);
+extern int get_random_bytes(char *buf, size_t len);
 extern uint64_t get_random(uint64_t min_val, uint64_t max_val);
 
 #endif

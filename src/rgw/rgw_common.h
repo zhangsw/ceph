@@ -226,14 +226,13 @@ enum {
 
 
  /* size should be the required string size + 1 */
-extern int gen_rand_base64(CephContext *cct, char *dest, int size);
-extern int gen_rand_alphanumeric(CephContext *cct, char *dest, int size);
-extern int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, int size);
-extern int gen_rand_alphanumeric_upper(CephContext *cct, char *dest, int size);
-extern int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, int size);
-extern int gen_rand_alphanumeric_plain(CephContext *cct, char *dest, int size);
-
-extern int gen_rand_alphanumeric_lower(CephContext *cct, string *str, int length);
+extern int gen_rand_base64(CephContext *cct, char *dest, size_t size);
+extern int gen_rand_alphanumeric(CephContext *cct, char *dest, size_t size);
+extern int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, size_t size);
+extern int gen_rand_alphanumeric_lower(CephContext *cct, string *str, size_t size);
+extern int gen_rand_alphanumeric_upper(CephContext *cct, char *dest, size_t size);
+extern int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, size_t size);
+extern int gen_rand_alphanumeric_plain(CephContext *cct, char *dest, size_t size);
 
 enum RGWIntentEvent {
   DEL_OBJ = 0,
@@ -1797,7 +1796,7 @@ static inline int rgw_str_to_bool(const char *s, int def_val)
           strcasecmp(s, "1") == 0);
 }
 
-static inline void append_rand_alpha(CephContext *cct, const string& src, string& dest, int len)
+static inline void append_rand_alpha(CephContext *cct, const string& src, string& dest, size_t len)
 {
   dest = src;
   char buf[len + 1];

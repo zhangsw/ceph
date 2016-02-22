@@ -589,15 +589,17 @@ int gen_rand_base64(CephContext *cct, char *dest, int size) /* size should be th
 
 static const char alphanum_upper_table[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-int gen_rand_alphanumeric_upper(CephContext *cct, char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric_upper(CephContext *cct, char *dest, size_t size) /* size should be the required string size + 1 */
 {
+  assert(size > 0);
+
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
     lderr(cct) << "cannot get random bytes: " << cpp_strerror(-ret) << dendl;
     return ret;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_upper_table[pos % (sizeof(alphanum_upper_table) - 1)];
@@ -609,7 +611,7 @@ int gen_rand_alphanumeric_upper(CephContext *cct, char *dest, int size) /* size 
 
 static const char alphanum_lower_table[]="0123456789abcdefghijklmnopqrstuvwxyz";
 
-int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, size_t size) /* size should be the required string size + 1 */
 {
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
@@ -617,7 +619,7 @@ int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, int size) /* size 
     return ret;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_lower_table[pos % (sizeof(alphanum_lower_table) - 1)];
@@ -627,9 +629,9 @@ int gen_rand_alphanumeric_lower(CephContext *cct, char *dest, int size) /* size 
   return 0;
 }
 
-int gen_rand_alphanumeric_lower(CephContext *cct, string *str, int length)
+int gen_rand_alphanumeric_lower(CephContext *cct, string *str, size_t size)
 {
-  char buf[length + 1];
+  char buf[size + 1];
   int ret = gen_rand_alphanumeric_lower(cct, buf, sizeof(buf));
   if (ret < 0) {
     return ret;
@@ -641,7 +643,7 @@ int gen_rand_alphanumeric_lower(CephContext *cct, string *str, int length)
 // this is basically a modified base64 charset, url friendly
 static const char alphanum_table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-int gen_rand_alphanumeric(CephContext *cct, char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric(CephContext *cct, char *dest, size_t size) /* size should be the required string size + 1 */
 {
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
@@ -649,7 +651,7 @@ int gen_rand_alphanumeric(CephContext *cct, char *dest, int size) /* size should
     return ret;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_table[pos & 63];
@@ -661,7 +663,7 @@ int gen_rand_alphanumeric(CephContext *cct, char *dest, int size) /* size should
 
 static const char alphanum_no_underscore_table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.";
 
-int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, size_t size) /* size should be the required string size + 1 */
 {
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
@@ -669,7 +671,7 @@ int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, int size) 
     return ret;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_no_underscore_table[pos & 63];
@@ -681,7 +683,7 @@ int gen_rand_alphanumeric_no_underscore(CephContext *cct, char *dest, int size) 
 
 static const char alphanum_plain_table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-int gen_rand_alphanumeric_plain(CephContext *cct, char *dest, int size) /* size should be the required string size + 1 */
+int gen_rand_alphanumeric_plain(CephContext *cct, char *dest, size_t size) /* size should be the required string size + 1 */
 {
   int ret = get_random_bytes(dest, size);
   if (ret < 0) {
@@ -689,7 +691,7 @@ int gen_rand_alphanumeric_plain(CephContext *cct, char *dest, int size) /* size 
     return ret;
   }
 
-  int i;
+  size_t i;
   for (i=0; i<size - 1; i++) {
     int pos = (unsigned)dest[i];
     dest[i] = alphanum_plain_table[pos % (sizeof(alphanum_plain_table) - 1)];

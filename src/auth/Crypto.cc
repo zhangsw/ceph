@@ -36,7 +36,7 @@
 
 #include <errno.h>
 
-int get_random_bytes(char *buf, int len)
+int get_random_bytes(char *buf, size_t len)
 {
   int fd = TEMP_FAILURE_RETRY(::open("/dev/urandom", O_RDONLY));
   if (fd < 0)
@@ -46,7 +46,7 @@ int get_random_bytes(char *buf, int len)
   return ret;
 }
 
-static int get_random_bytes(int len, bufferlist& bl)
+static int get_random_bytes(size_t len, bufferlist& bl)
 {
   char buf[len];
   get_random_bytes(buf, len);

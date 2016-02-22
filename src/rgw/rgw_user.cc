@@ -928,7 +928,7 @@ int RGWAccessKeyPool::generate_key(RGWUserAdminOpState& op_state, std::string *e
     char public_id_buf[PUBLIC_ID_LEN + 1];
 
     do {
-      int id_buf_size = sizeof(public_id_buf);
+      size_t id_buf_size = sizeof(public_id_buf);
       ret = gen_rand_alphanumeric_upper(g_ceph_context,
                public_id_buf, id_buf_size);
 
