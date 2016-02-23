@@ -144,7 +144,8 @@ public:
       : nref(0),
 	oid(o),
 	key(k),
-	exists(false) {
+	exists(false),
+	tail_offset(0) {
     }
 
     void flush();
