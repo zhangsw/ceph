@@ -61,7 +61,7 @@ public:
     int rval;
     bufferlist bl;  ///< write payload (so that it remains stable for duration)
 
-    aio_t(void *p, int f) : priv(p), fd(f), rval(-1000) {
+    aio_t(void *p, int f) : priv(p), fd(f), offset(0), length(0), rval(-1000) {
       memset(&iocb, 0, sizeof(iocb));
     }
 
