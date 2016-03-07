@@ -1220,7 +1220,7 @@ void RGWPeriod::update(const RGWZoneGroupMap& map)
 {
   ldout(cct, 20) << __func__ << " realm " << realm_id << " period " << id << dendl;
   for (std::map<string, RGWZoneGroup>::const_iterator iter = map.zonegroups.begin();
-       iter != map.zonegroups.end(); iter++) {
+       iter != map.zonegroups.end(); ++iter) {
     period_map.zonegroups_by_api[iter->second.api_name] = iter->second;
     period_map.zonegroups[iter->second.get_name()] = iter->second;
   }
@@ -3391,7 +3391,7 @@ int RGWRados::replace_region_with_zonegroup()
 	}
       }
       for (map<string, RGWZone>::const_iterator iter = zonegroup.zones.begin(); iter != zonegroup.zones.end();
-	   iter ++) {
+	   ++iter) {
 	RGWZoneParams zoneparams(iter->first, iter->first);
 	ret = zoneparams.init(cct, this);
 	if (ret < 0) {
@@ -3815,7 +3815,7 @@ int RGWRados::list_periods(list<string>& periods)
   if (ret < 0) {
     return ret;
   }
-  for(list<string>::iterator iter = raw_periods.begin(); iter != raw_periods.end(); iter++) {
+  for(list<string>::iterator iter = raw_periods.begin(); iter != raw_periods.end(); ++iter) {
     size_t pos = iter->find(".");
     if ( pos != std::string::npos) {
       periods.push_back(iter->substr(0, pos));
