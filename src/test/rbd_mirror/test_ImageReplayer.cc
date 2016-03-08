@@ -222,7 +222,7 @@ public:
     *mirror_position = cls::journal::ObjectPosition();
 
     std::set<cls::journal::Client>::const_iterator c;
-    for (c = registered_clients.begin(); c != registered_clients.end(); c++) {
+    for (c = registered_clients.begin(); c != registered_clients.end(); ++c) {
       std::cout << __func__ << ": client: " << *c << std::endl;
       cls::journal::ObjectPositions object_positions =
 	c->commit_position.object_positions;
