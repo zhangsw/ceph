@@ -58,7 +58,7 @@ public:
     std::string local_image_name;
 
     BootstrapParams() {}
-    BootstrapParams(const std::string local_image_name) :
+    BootstrapParams(const std::string &local_image_name) :
       local_image_name(local_image_name) {}
 
     bool empty() const {
