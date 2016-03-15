@@ -78,10 +78,14 @@ void RGWOp_MDLog_List::execute() {
   } 
 
   if (period.empty()) {
-    ldout(s->cct, 5) << "Missing period id" << dendl;
-    http_ret = -EINVAL;
-    return;
+    ldout(s->cct, 5) << "Missing period id trying to use current" << dendl;
+    RGWPeriod current_period;
+    http_ret = current_period.init(s->cct, store);
+    if (http_ret < 0) {
+      return;
+    }
   }
+
   RGWMetadataLog meta_log{s->cct, store, period};
 
   meta_log.init_list_entries(shard_id, ut_st, ut_et, marker, &handle);
