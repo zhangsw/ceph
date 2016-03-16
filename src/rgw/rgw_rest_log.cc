@@ -237,14 +237,22 @@ void RGWOp_MDLog_Lock::execute() {
   locker_id    = s->info.args.get("locker-id");
   zone_id      = s->info.args.get("zone-id");
 
-  if (period.empty() ||
-      shard_id_str.empty() ||
+  if (shard_id_str.empty() ||
       (duration_str.empty()) ||
       locker_id.empty() ||
       zone_id.empty()) {
     dout(5) << "Error invalid parameter list" << dendl;
     http_ret = -EINVAL;
     return;
+  }
+
+  if (period.empty()) {
+    ldout(s->cct, 5) << "Missing period id trying to use current" << dendl;
+    RGWPeriod current_period;
+    http_ret = current_period.init(s->cct, store);
+    if (http_ret < 0) {
+      return;
+    }
   }
 
   string err;
@@ -280,13 +288,21 @@ void RGWOp_MDLog_Unlock::execute() {
   locker_id    = s->info.args.get("locker-id");
   zone_id      = s->info.args.get("zone-id");
 
-  if (period.empty() ||
-      shard_id_str.empty() ||
+  if (shard_id_str.empty() ||
       locker_id.empty() ||
       zone_id.empty()) {
     dout(5) << "Error invalid parameter list" << dendl;
     http_ret = -EINVAL;
     return;
+  }
+
+  if (period.empty()) {
+    ldout(s->cct, 5) << "Missing period id trying to use current" << dendl;
+    RGWPeriod current_period;
+    http_ret = current_period.init(s->cct, store);
+    if (http_ret < 0) {
+      return;
+    }
   }
 
   string err;
