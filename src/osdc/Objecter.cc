@@ -2663,7 +2663,7 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
       t->osd = -1;
       return RECALC_OP_TARGET_POOL_DNE;
     }
-    pgid = osdmap->raw_pg_to_pg(t->base_pgid);
+    pgid = t->base_pgid;
   } else {
     int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc,
 					   pgid);
