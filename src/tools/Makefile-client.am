@@ -52,6 +52,7 @@ rbd_SOURCES = \
 	tools/rbd/action/MirrorPool.cc \
 	tools/rbd/action/MirrorImage.cc \
 	tools/rbd/action/ObjectMap.cc \
+	tools/rbd/action/ObjectMapCheck.cc \
 	tools/rbd/action/Remove.cc \
 	tools/rbd/action/Rename.cc \
 	tools/rbd/action/Resize.cc \
