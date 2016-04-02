@@ -68,6 +68,15 @@ POOL=mirror
 SRC_DIR=$(readlink -f $(dirname $0)/../../../src)
 TEMPDIR=
 
+# These vars facilitate running this script in an environment with
+# ceph installed from packages, like teuthology. These are not defined
+# by default.
+#
+# USE_EXISTING_CLUSTER - if set, do not start and stop ceph clusters
+# UNMANAGED_RBD_MIRROR - if set, do not start and stop rbd-mirror
+# CEPH_ID              - id portion of client.$id ceph user that rbd-mirror uses
+#                        this is assumed to be the same for all clusters
+
 #
 # Functions
 #
@@ -77,7 +86,11 @@ daemon_asok_file()
     local daemon=$1
     local cluster=$(daemon_local_cluster "${daemon}")
 
-    echo "${TEMPDIR}/rbd-mirror.${daemon}.${cluster}.asok"
+    if [ -n "${UNMANAGED_RBD_MIRROR}" ]; then
+        echo $(ceph-conf --cluster $cluster --name "client.${CEPH_ID}" 'admin socket')
+    else
+        echo "${TEMPDIR}/rbd-mirror.${daemon}.${cluster}.asok"
+    fi
 }
 
 daemon_pid_file()
@@ -85,7 +98,11 @@ daemon_pid_file()
     local daemon=$1
     local cluster=$(daemon_local_cluster "${daemon}")
 
-    echo "${TEMPDIR}/rbd-mirror.${daemon}.pid"
+    if [ -n "${UNMANAGED_RBD_MIRROR}" ]; then
+        echo $(ceph-conf --cluster $cluster --name "client.${CEPH_ID}" 'pid file')
+    else
+        echo "${TEMPDIR}/rbd-mirror.${daemon}.pid"
+    fi
 }
 
 setup()
@@ -100,16 +117,18 @@ setup()
 	TEMPDIR=`mktemp -d`
     fi
 
-    cd ${SRC_DIR}
-    ./mstart.sh ${CLUSTER1} -n
-    ./mstart.sh ${CLUSTER2} -n
+    if [ -z "${USE_EXISTING_CLUSTER}" ]; then
+        cd ${SRC_DIR}
+        ./mstart.sh ${CLUSTER1} -n
+        ./mstart.sh ${CLUSTER2} -n
 
-    ln -s $(readlink -f run/${CLUSTER1}/ceph.conf) \
-       ${TEMPDIR}/${CLUSTER1}.conf
-    ln -s $(readlink -f run/${CLUSTER2}/ceph.conf) \
-       ${TEMPDIR}/${CLUSTER2}.conf
+        ln -s $(readlink -f run/${CLUSTER1}/ceph.conf) \
+           ${TEMPDIR}/${CLUSTER1}.conf
+        ln -s $(readlink -f run/${CLUSTER2}/ceph.conf) \
+           ${TEMPDIR}/${CLUSTER2}.conf
 
-    cd ${TEMPDIR}
+        cd ${TEMPDIR}
+    fi
 
     ceph --cluster ${CLUSTER1} osd pool create ${POOL} 64 64
     ceph --cluster ${CLUSTER2} osd pool create ${POOL} 64 64
@@ -130,11 +149,14 @@ cleanup()
     stop_mirror ${CLUSTER1_DAEMON}
     stop_mirror ${CLUSTER2_DAEMON}
 
-    cd ${SRC_DIR}
-
-    ./mstop.sh ${CLUSTER1}
-    ./mstop.sh ${CLUSTER2}
-
+    if [ -z "${USE_EXISTING_CLUSTER}" ]; then
+        cd ${SRC_DIR}
+        ./mstop.sh ${CLUSTER1}
+        ./mstop.sh ${CLUSTER2}
+    else
+        ceph --cluster ${CLUSTER1} osd pool rm ${POOL} ${POOL} --yes-i-really-really-mean-it
+        ceph --cluster ${CLUSTER2} osd pool rm ${POOL} ${POOL} --yes-i-really-really-mean-it
+    fi
     rm -Rf ${TEMPDIR}
 }
 
@@ -142,6 +164,8 @@ start_mirror()
 {
     local daemon=$1
     local cluster=$2
+
+    test -n "${UNMANAGED_RBD_MIRROR}" && return
 
     rbd-mirror \
 	--cluster ${cluster} \
@@ -156,6 +180,8 @@ start_mirror()
 stop_mirror()
 {
     local daemon=$1
+
+    test -n "${UNMANAGED_RBD_MIRROR}" && return
 
     local pid
     pid=$(cat $(daemon_pid_file "${daemon}") 2>/dev/null) || :
