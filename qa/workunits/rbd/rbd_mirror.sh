@@ -75,7 +75,7 @@ TEMPDIR=
 daemon_asok_file()
 {
     local daemon=$1
-    local cluster=$2
+    local cluster=$(daemon_local_cluster "${daemon}")
 
     echo "${TEMPDIR}/rbd-mirror.${daemon}.${cluster}.asok"
 }
@@ -83,6 +83,7 @@ daemon_asok_file()
 daemon_pid_file()
 {
     local daemon=$1
+    local cluster=$(daemon_local_cluster "${daemon}")
 
     echo "${TEMPDIR}/rbd-mirror.${daemon}.pid"
 }
@@ -167,22 +168,14 @@ stop_mirror()
 	done
 	ps auxww | awk -v pid=${pid} '$2 == pid {print; exit 1}'
     fi
-    rm -f $(daemon_asok_file "${daemon}" "${CLUSTER1}")
-    rm -f $(daemon_asok_file "${daemon}" "${CLUSTER2}")
+    rm -f $(daemon_asok_file "${daemon}")
     rm -f $(daemon_pid_file "${daemon}")
 }
 
 daemon_local_cluster()
 {
     local daemon=$1
-    local pid_file=$(daemon_pid_file $daemon)
-
-    pid=$(cat $(daemon_pid_file "${daemon}"))
-
-    test -n "${pid}"
-
-    ps auxww | awk -v pid=${pid} '$2 == pid' |
-	sed -nEe 's/^.*--cluster +([^ ]+).*$/\1/p'
+    echo "${daemon}" | sed s/_daemon$//
 }
 
 status()
@@ -243,7 +236,7 @@ status()
 
 	cluster=$(daemon_local_cluster ${daemon})
 
-	local asok_file=$(daemon_asok_file ${daemon} ${cluster})
+	local asok_file=$(daemon_asok_file ${daemon})
 	if [ ! -S "${asok_file}" ]
 	then
 	    echo "${daemon} rbd-mirror asok is unknown (${asok_file} not exits)"
@@ -271,7 +264,7 @@ flush()
     fi
 
     local cluster=$(daemon_local_cluster "${daemon}")
-    local asok_file=$(daemon_asok_file "${daemon}" "${cluster}")
+    local asok_file=$(daemon_asok_file "${daemon}")
     test -S "${asok_file}"
 
     ceph --admin-daemon ${asok_file} ${cmd}
@@ -285,7 +278,7 @@ test_image_replay_state()
     local current_state=stopped
 
     local cluster=$(daemon_local_cluster "${daemon}")
-    local asok_file=$(daemon_asok_file "${daemon}" "${cluster}")
+    local asok_file=$(daemon_asok_file "${daemon}")
     test -S "${asok_file}"
 
     ceph --admin-daemon ${asok_file} help |
