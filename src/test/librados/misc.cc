@@ -88,11 +88,31 @@ TEST_F(LibRadosMiscPP, LongNamePP) {
   bufferlist bl;
   bl.append("content");
   int maxlen = g_conf->osd_max_object_name_len;
-  ASSERT_EQ(0, ioctx.write(string(maxlen/2, 'a').c_str(), bl, bl.length(), 0));
-  ASSERT_EQ(0, ioctx.write(string(maxlen-1, 'a').c_str(), bl, bl.length(), 0));
-  ASSERT_EQ(0, ioctx.write(string(maxlen, 'a').c_str(), bl, bl.length(), 0));
-  ASSERT_EQ(-ENAMETOOLONG, ioctx.write(string(maxlen+1, 'a').c_str(), bl, bl.length(), 0));
-  ASSERT_EQ(-ENAMETOOLONG, ioctx.write(string(maxlen*2, 'a').c_str(), bl, bl.length(), 0));
+  ASSERT_EQ(
+    0,
+    ioctx.write(
+      string((maxlen/2)-nspace.size(), 'a').c_str(),
+      bl, bl.length(), 0));
+  ASSERT_EQ(
+    0,
+    ioctx.write(
+      string(maxlen - 1 - nspace.size(), 'a').c_str(),
+      bl, bl.length(), 0));
+  ASSERT_EQ(
+    0,
+    ioctx.write(
+      string(maxlen-nspace.size(), 'a').c_str(),
+      bl, bl.length(), 0));
+  ASSERT_EQ(
+    -ENAMETOOLONG,
+    ioctx.write(
+      string(maxlen+1-nspace.size(), 'a').c_str(),
+      bl, bl.length(), 0));
+  ASSERT_EQ(
+    -ENAMETOOLONG,
+    ioctx.write(
+      string((maxlen*2) - nspace.size(), 'a').c_str(),
+      bl, bl.length(), 0));
 }
 
 TEST_F(LibRadosMiscPP, LongAttrNamePP) {
