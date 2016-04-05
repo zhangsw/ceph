@@ -101,6 +101,12 @@ void file_layout_t::decode(bufferlist::iterator& p)
   ::decode(object_size, p);
   ::decode(pool_id, p);
   ::decode(pool_ns, p);
+  // HACK repair after our upgrade screwup.
+  if (pool_id == -1 &&
+      stripe_unit &&
+      stripe_count &&
+      object_size)
+    pool_id = 0;
   DECODE_FINISH(p);
 }
 
