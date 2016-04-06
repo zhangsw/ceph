@@ -29,6 +29,7 @@
 
 #include "messages/MMDSMap.h"
 #include "messages/MFSMap.h"
+#include "messages/MFSMapUser.h"
 #include "messages/MMDSBeacon.h"
 #include "messages/MMDSLoadTargets.h"
 #include "messages/MMonCommand.h"
@@ -2373,27 +2374,22 @@ void MDSMonitor::check_subs()
 {
   std::list<std::string> types;
 
-  // Subscriptions may be to "fsmap" (MDS and legacy clients),
-  // "fsmap.<namespace>", or to "fsmap" for the full state of all
+  // Subscriptions may be to "mdsmap" (MDS and legacy clients),
+  // "mdsmap.<namespace>", or to "fsmap" for the full state of all
   // filesystems.  Build a list of all the types we service
   // subscriptions for.
-  types.push_back("mdsmap");
   types.push_back("fsmap");
-  for (const auto &i : fsmap.filesystems) {
-    auto fscid = i.first;
-    std::ostringstream oss;
-    oss << "fsmap." << fscid;
-    types.push_back(oss.str());
-  }
+  types.push_back("mdsmap");
 
   for (const auto &type : types) {
-    if (mon->session_map.subs.count(type) == 0)
-      return;
-    xlist<Subscription*>::iterator p = mon->session_map.subs[type]->begin();
-    while (!p.end()) {
-      Subscription *sub = *p;
-      ++p;
-      check_sub(sub);
+    for (auto p = mon->session_map.subs.lower_bound(type);
+	 p != mon->session_map.subs.end();
+	 ++p) {
+      if (p->first.find(type) != 0)
+	break;
+      for (auto q = p->second->begin(); !q.end(); ++q) {
+	check_sub(*q);
+      }
     }
   }
 }
@@ -2412,7 +2408,26 @@ void MDSMonitor::check_sub(Subscription *sub)
         sub->next = fsmap.get_epoch() + 1;
       }
     }
-  } else {
+  } else if (sub->type == "fsmap.user") {
+    if (sub->next <= fsmap.get_epoch()) {
+      FSMapUser fsmap_u;
+      fsmap_u.epoch = fsmap.get_epoch();
+      fsmap_u.legacy_client_fscid = fsmap.legacy_client_fscid;
+      for (auto p = fsmap.filesystems.begin();
+	   p != fsmap.filesystems.end();
+	   ++p) {
+	FSMapUser::fs_info_t& fs_info = fsmap_u.filesystems[p->first];
+	fs_info.cid = p->first;
+	fs_info.name= p->second->mds_map.fs_name;
+      }
+      sub->session->con->send_message(new MFSMapUser(mon->monmap->fsid, fsmap_u));
+      if (sub->onetime) {
+	mon->session_map.remove_sub(sub);
+      } else {
+	sub->next = fsmap.get_epoch() + 1;
+      }
+    }
+  } else if (sub->type.compare(0, 6, "mdsmap") == 0) {
     if (sub->next > fsmap.get_epoch()) {
       return;
     }
