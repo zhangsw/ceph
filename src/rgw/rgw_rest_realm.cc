@@ -250,9 +250,14 @@ void RGWOp_Realm_Get::execute()
   string name;
   RESTArgs::get_string(s, "name", name, &name);
 
+  ldout(store->ctx(), 0) << __func__ << " realm id " << id << " name " << name
+			 << dendl;
   // read realm
   realm.reset(new RGWRealm(id, name));
   http_ret = realm->init(g_ceph_context, store);
+
+  ldout(store->ctx(), 0) << __func__ << " realm id " << id << " name " << name << " current_period " <<
+    realm->get_current_period() << dendl;
   if (http_ret < 0)
     lderr(store->ctx()) << "failed to read realm id=" << id
         << " name=" << name << dendl;
@@ -268,7 +273,9 @@ void RGWOp_Realm_Get::send_response()
     return;
 
   encode_json("realm", *realm, s->formatter);
-  flusher.flush();
+  rgw_flush_formatter_and_reset(s, s->formatter);
+
+  
 }
 
 class RGWHandler_Realm : public RGWHandler_Auth_S3 {
