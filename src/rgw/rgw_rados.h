@@ -1690,6 +1690,15 @@ struct RGWObjectCtx {
 class Finisher;
 class RGWAsyncRadosProcessor;
 
+template <class T>
+class RGWChainedCacheImpl;
+
+struct bucket_info_entry {
+  RGWBucketInfo info;
+  real_time mtime;
+  map<string, bufferlist> attrs;
+};
+
 class RGWRados
 {
   friend class RGWGC;
@@ -1744,7 +1753,8 @@ class RGWRados
   RGWObjectExpirer *obj_expirer;
   bool use_gc_thread;
   bool quota_threads;
-  bool run_sync_thread;
+  bool run_meta_sync_thread;
+  bool run_data_sync_thread;
 
   RGWAsyncRadosProcessor* async_rados;
 
@@ -1797,6 +1807,9 @@ protected:
   RWLock handle_lock;
   std::map<pthread_t, int> rados_map;
 
+  using RGWChainedCacheImpl_bucket_info_entry = RGWChainedCacheImpl<bucket_info_entry>;
+  RGWChainedCacheImpl_bucket_info_entry *binfo_cache;
+
   librados::IoCtx gc_pool_ctx;        // .rgw.gc
   librados::IoCtx objexp_pool_ctx;
 
@@ -1821,7 +1834,7 @@ protected:
 public:
   RGWRados() : max_req_id(0), lock("rados_timer_lock"), watchers_lock("watchers_lock"), timer(NULL),
                gc(NULL), obj_expirer(NULL), use_gc_thread(false), quota_threads(false),
-               run_sync_thread(false), async_rados(nullptr), meta_notifier(NULL),
+               run_meta_sync_thread(false), run_data_sync_thread(false), async_rados(nullptr), meta_notifier(NULL),
                data_notifier(NULL), meta_sync_processor_thread(NULL),
                meta_sync_thread_lock("meta_sync_thread_lock"), data_sync_thread_lock("data_sync_thread_lock"),
                num_watchers(0), watchers(NULL),
@@ -1831,6 +1844,7 @@ public:
                max_bucket_id(0), cct(NULL),
                rados(NULL), next_rados_handle(0),
                num_rados_handles(0), handle_lock("rados_handle_lock"),
+               binfo_cache(NULL),
                pools_initialized(false),
                quota_handler(NULL),
                finisher(NULL),
@@ -1977,7 +1991,8 @@ public:
     set_context(_cct);
     use_gc_thread = _use_gc_thread;
     quota_threads = _quota_threads;
-    run_sync_thread = _run_sync_thread;
+    run_meta_sync_thread = _run_sync_thread;
+    run_data_sync_thread = _run_sync_thread;
     return initialize();
   }
   /** Initialize the RADOS instance and prepare to do other ops */

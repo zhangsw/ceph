@@ -106,14 +106,6 @@ static string RGW_DEFAULT_PERIOD_ROOT_POOL = "rgw.root";
 
 #define dout_subsys ceph_subsys_rgw
 
-struct bucket_info_entry {
-  RGWBucketInfo info;
-  real_time mtime;
-  map<string, bufferlist> attrs;
-};
-
-static RGWChainedCacheImpl<bucket_info_entry> binfo_cache;
-
 void RGWDefaultZoneGroupInfo::dump(Formatter *f) const {
   encode_json("default_zonegroup", default_zonegroup, f);
 }
@@ -3051,10 +3043,12 @@ int RGWRados::get_max_chunk_size(rgw_bucket& bucket, uint64_t *max_chunk_size)
 
 void RGWRados::finalize()
 {
-  if (run_sync_thread) {
+  if (run_meta_sync_thread) {
     Mutex::Locker l(meta_sync_thread_lock);
     meta_sync_processor_thread->stop();
+  }
 
+  if (run_data_sync_thread) {
     Mutex::Locker dl(data_sync_thread_lock);
     for (auto iter : data_sync_processor_threads) {
       RGWDataSyncProcessorThread *thread = iter.second;
@@ -3064,7 +3058,7 @@ void RGWRados::finalize()
   if (async_rados) {
     async_rados->stop();
   }
-  if (run_sync_thread) {
+  if (run_meta_sync_thread || run_data_sync_thread) {
     delete meta_sync_processor_thread;
     meta_sync_processor_thread = NULL;
     Mutex::Locker dl(data_sync_thread_lock);
@@ -3126,6 +3120,7 @@ void RGWRados::finalize()
   if (cr_registry) {
     cr_registry->put();
   }
+  delete binfo_cache;
 }
 
 /** 
@@ -3665,8 +3660,12 @@ int RGWRados::init_complete()
 
   /* not point of running sync thread if there is a single zone or
      we don't have a master zone configured or there is no rest_master_conn */
-  if (get_zonegroup().zones.size() < 2 || get_zonegroup().master_zone.empty() || !rest_master_conn) {
-    run_sync_thread = false;
+  if (get_zonegroup().zones.size() < 2 || get_zonegroup().master_zone.empty()) {
+    run_data_sync_thread = false;
+  }
+
+  if (!rest_master_conn) {
+    run_meta_sync_thread = false;
   }
 
   async_rados = new RGWAsyncRadosProcessor(this, cct->_conf->rgw_num_async_rados_threads);
@@ -3685,7 +3684,7 @@ int RGWRados::init_complete()
     meta_notifier->start();
   }
 
-  if (run_sync_thread) {
+  if (run_meta_sync_thread) {
     Mutex::Locker l(meta_sync_thread_lock);
     meta_sync_processor_thread = new RGWMetaSyncProcessorThread(this, async_rados);
     ret = meta_sync_processor_thread->init();
@@ -3694,7 +3693,9 @@ int RGWRados::init_complete()
       return ret;
     }
     meta_sync_processor_thread->start();
+  }
 
+  if (run_data_sync_thread) {
     Mutex::Locker dl(data_sync_thread_lock);
     for (map<string, RGWRESTConn *>::iterator iter = zone_conn_map.begin(); iter != zone_conn_map.end(); ++iter) {
       ldout(cct, 5) << "starting data sync thread for zone " << iter->first << dendl;
@@ -3722,7 +3723,8 @@ int RGWRados::init_complete()
   }
   ldout(cct, 20) << __func__ << " bucket index max shards: " << bucket_index_max_shards << dendl;
 
-  binfo_cache.init(this);
+  binfo_cache = new RGWChainedCacheImpl<bucket_info_entry>;
+  binfo_cache->init(this);
 
   return ret;
 }
@@ -10369,7 +10371,7 @@ int RGWRados::get_bucket_info(RGWObjectCtx& obj_ctx,
   string bucket_entry;
   rgw_make_bucket_entry_name(tenant, bucket_name, bucket_entry);
 
-  if (binfo_cache.find(bucket_entry, &e)) {
+  if (binfo_cache->find(bucket_entry, &e)) {
     info = e.info;
     if (pattrs)
       *pattrs = e.attrs;
@@ -10439,7 +10441,7 @@ int RGWRados::get_bucket_info(RGWObjectCtx& obj_ctx,
 
 
   /* chain to both bucket entry point and bucket instance */
-  if (!binfo_cache.put(this, bucket_entry, &e, cache_info_entries)) {
+  if (!binfo_cache->put(this, bucket_entry, &e, cache_info_entries)) {
     ldout(cct, 20) << "couldn't put binfo cache entry, might have raced with data changes" << dendl;
   }
 
