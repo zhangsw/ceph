@@ -245,6 +245,7 @@ public:
 
 void RGWOp_Realm_Get::execute()
 {
+  ldout(store->ctx(), 0) << __func__ << dendl;
   string id;
   RESTArgs::get_string(s, "id", id, &id);
   string name;
