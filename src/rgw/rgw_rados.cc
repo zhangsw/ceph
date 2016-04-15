@@ -1340,6 +1340,7 @@ int RGWPeriod::commit(RGWRealm& realm, const RGWPeriod& current_period,
   }
   // set as latest epoch
   r = set_latest_epoch(epoch);
+  ldout(cct, 0) << __func__ << "::set_latest_epoch to " << epoch << dendl;
   if (r < 0) {
     ldout(cct, 0) << "failed to set latest epoch: " << cpp_strerror(-r) << dendl;
     return r;
