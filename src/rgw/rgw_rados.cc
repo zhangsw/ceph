@@ -3043,10 +3043,12 @@ int RGWRados::get_max_chunk_size(rgw_bucket& bucket, uint64_t *max_chunk_size)
 
 void RGWRados::finalize()
 {
-  if (run_sync_thread) {
+  if (run_meta_sync_thread) {
     Mutex::Locker l(meta_sync_thread_lock);
     meta_sync_processor_thread->stop();
+  }
 
+  if (run_data_sync_thread) {
     Mutex::Locker dl(data_sync_thread_lock);
     for (auto iter : data_sync_processor_threads) {
       RGWDataSyncProcessorThread *thread = iter.second;
@@ -3056,7 +3058,7 @@ void RGWRados::finalize()
   if (async_rados) {
     async_rados->stop();
   }
-  if (run_sync_thread) {
+  if (run_meta_sync_thread || run_data_sync_thread) {
     delete meta_sync_processor_thread;
     meta_sync_processor_thread = NULL;
     Mutex::Locker dl(data_sync_thread_lock);
@@ -3658,8 +3660,12 @@ int RGWRados::init_complete()
 
   /* not point of running sync thread if there is a single zone or
      we don't have a master zone configured or there is no rest_master_conn */
-  if (get_zonegroup().zones.size() < 2 || get_zonegroup().master_zone.empty() || !rest_master_conn) {
-    run_sync_thread = false;
+  if (get_zonegroup().zones.size() < 2 || get_zonegroup().master_zone.empty()) {
+    run_data_sync_thread = false;
+  }
+
+  if (!rest_master_conn) {
+    run_meta_sync_thread = false;
   }
 
   async_rados = new RGWAsyncRadosProcessor(this, cct->_conf->rgw_num_async_rados_threads);
@@ -3678,7 +3684,7 @@ int RGWRados::init_complete()
     meta_notifier->start();
   }
 
-  if (run_sync_thread) {
+  if (run_meta_sync_thread) {
     Mutex::Locker l(meta_sync_thread_lock);
     meta_sync_processor_thread = new RGWMetaSyncProcessorThread(this, async_rados);
     ret = meta_sync_processor_thread->init();
@@ -3687,7 +3693,9 @@ int RGWRados::init_complete()
       return ret;
     }
     meta_sync_processor_thread->start();
+  }
 
+  if (run_data_sync_thread) {
     Mutex::Locker dl(data_sync_thread_lock);
     for (map<string, RGWRESTConn *>::iterator iter = zone_conn_map.begin(); iter != zone_conn_map.end(); ++iter) {
       ldout(cct, 5) << "starting data sync thread for zone " << iter->first << dendl;
