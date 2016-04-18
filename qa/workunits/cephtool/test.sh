@@ -1,6 +1,11 @@
 #!/bin/bash -x
 
-source $CEPH_ROOT/qa/workunits/ceph-helpers.sh
+if [ -z $CEPH_ROOT ]; then
+    source $(dirname $0)/../ceph-helpers.sh
+else
+    # launched by Makefile, so follow its instruction
+    source $CEPH_ROOT/qa/workunits/ceph-helpers.sh
+fi
 
 set -e
 set -o functrace
