@@ -682,7 +682,7 @@ int JournalTool::scavenge_dentries(
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str());
+      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str(), 0);
       dn_key.encode(key);
       read_keys.insert(key);
     }
@@ -695,7 +695,7 @@ int JournalTool::scavenge_dentries(
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(rb.dnlast, rb.dn.c_str());
+      dentry_key_t dn_key(rb.dnlast, rb.dn.c_str(), 0);
       dn_key.encode(key);
       read_keys.insert(key);
     }
@@ -717,7 +717,7 @@ int JournalTool::scavenge_dentries(
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str());
+      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str(), 0);
       dn_key.encode(key);
 
       dout(4) << "inspecting fullbit " << frag_oid.name << "/" << fb.dn
@@ -786,7 +786,7 @@ int JournalTool::scavenge_dentries(
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(rb.dnlast, rb.dn.c_str());
+      dentry_key_t dn_key(rb.dnlast, rb.dn.c_str(), 0);
       dn_key.encode(key);
 
       dout(4) << "inspecting remotebit " << frag_oid.name << "/" << rb.dn
@@ -1020,7 +1020,7 @@ int JournalTool::replay_offline(EMetaBlob const &metablob, bool const dry_run)
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str());
+      dentry_key_t dn_key(fb.dnlast, fb.dn.c_str(), 0);
       dn_key.encode(key);
 
       // See if the dentry is present
@@ -1069,7 +1069,7 @@ int JournalTool::replay_offline(EMetaBlob const &metablob, bool const dry_run)
 
       // Get a key like "foobar_head"
       std::string key;
-      dentry_key_t dn_key(nb.dnlast, nb.dn.c_str());
+      dentry_key_t dn_key(nb.dnlast, nb.dn.c_str(), 0);
       dn_key.encode(key);
 
       // Remove it from the dirfrag
