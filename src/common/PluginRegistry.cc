@@ -151,6 +151,7 @@ int PluginRegistry::load(const std::string &type,
     (const char *(*)())dlsym(library, PLUGIN_VERSION_FUNCTION);
   if (code_version == NULL) {
     lderr(cct) << __func__ << " code_version == NULL" << dlerror() << dendl;
+    dlclose(library);
     return -EXDEV;
   }
   if (code_version() != string(CEPH_GIT_NICE_VER)) {
