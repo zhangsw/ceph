@@ -3058,7 +3058,7 @@ void OSD::build_past_intervals_parallel()
 	p.old_up, up,
 	p.same_interval_since,
 	pg->info.history.last_epoch_clean,
-	cur_map, last_map,
+	cur_map.get(), last_map.get(),
 	pgid,
         recoverable.get(),
 	&pg->past_intervals,
