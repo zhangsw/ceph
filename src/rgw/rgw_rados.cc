@@ -6361,7 +6361,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
 {
   /* source is in a different zonegroup, copy from there */
 
-  RGWRESTStreamReadRequest *in_stream_req;
+  RGWRESTStreamReadRequest *in_stream_req = NULL;
   string tag;
   map<string, bufferlist> src_attrs;
   int i;
@@ -6574,6 +6574,9 @@ set_err_state:
     }
     delete opstate;
   }
+  if (in_stream_req)
+    delete in_stream_req;
+
   return ret;
 }
 

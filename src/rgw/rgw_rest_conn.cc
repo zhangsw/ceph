@@ -91,6 +91,7 @@ int RGWRESTConn::complete_request(RGWRESTStreamWriteRequest *req, string& etag, 
 {
   int ret = req->complete(etag, mtime);
   delete req;
+  req = NULL;
 
   return ret;
 }
