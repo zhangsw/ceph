@@ -480,7 +480,6 @@ export RPM_OPT_FLAGS=`echo $RPM_OPT_FLAGS | sed -e 's/i386/i486/'`
 		--with-nss \
 		--without-cryptopp \
 		--with-rest-bench \
-		--with-debug \
 %if 0%{with cephfs_java}
 		--enable-cephfs-java \
 %endif
@@ -602,7 +601,6 @@ fi
 %{_bindir}/ceph-objectstore-tool
 %{_bindir}/ceph-osd
 %{_bindir}/librados-config
-%{_bindir}/ceph-client-debug
 %{_bindir}/cephfs-journal-tool
 %{_bindir}/cephfs-table-tool
 %{_bindir}/ceph-debugpack
@@ -910,30 +908,6 @@ ln -sf %{_libdir}/librbd.so.1 /usr/lib64/qemu/librbd.so.1
 #################################################################################
 %files -n ceph-test
 %defattr(-,root,root,-)
-%{_bindir}/ceph_bench_log
-%{_bindir}/ceph_kvstorebench
-%{_bindir}/ceph_multi_stress_watch
-%{_bindir}/ceph_erasure_code
-%{_bindir}/ceph_erasure_code_benchmark
-%{_bindir}/ceph_omapbench
-%{_bindir}/ceph_perf_objectstore
-%{_bindir}/ceph_psim
-%{_bindir}/ceph_radosacl
-%{_bindir}/ceph_rgw_jsonparser
-%{_bindir}/ceph_rgw_multiparser
-%{_bindir}/ceph_scratchtool
-%{_bindir}/ceph_scratchtoolpp
-%{_bindir}/ceph_smalliobench
-%{_bindir}/ceph_smalliobenchdumb
-%{_bindir}/ceph_smalliobenchfs
-%{_bindir}/ceph_smalliobenchrbd
-%{_bindir}/ceph_streamtest
-%{_bindir}/ceph_test_*
-%{_bindir}/ceph_tpbench
-%{_bindir}/ceph_xattr_bench
-%{_bindir}/ceph-monstore-tool
-%{_bindir}/ceph-osdomap-tool
-%{_bindir}/ceph-kvstore-tool
 
 #################################################################################
 %if 0%{with cephfs_java}
@@ -956,7 +930,6 @@ ln -sf %{_libdir}/librbd.so.1 /usr/lib64/qemu/librbd.so.1
 %files -n cephfs-java
 %defattr(-,root,root,-)
 %{_javadir}/libcephfs.jar
-%{_javadir}/libcephfs-test.jar
 %endif
 
 #################################################################################
