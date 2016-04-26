@@ -71,6 +71,7 @@ AcquireRequest<I>::AcquireRequest(I &image_ctx, const std::string &cookie,
 template <typename I>
 AcquireRequest<I>::~AcquireRequest() {
   delete m_on_acquire;
+  delete m_on_finish;
 }
 
 template <typename I>
