@@ -829,8 +829,8 @@ if [ $1 = 0 ] ; then
   SERVICE_LIST=$(systemctl | grep -E '^ceph-mon@|^ceph-create-keys@|^ceph-osd@|^ceph-mds@|^ceph-disk-'  | cut -d' ' -f1)
   if [ -n "$SERVICE_LIST" ]; then
     for SERVICE in $SERVICE_LIST; do
-      %{_bindir}/systemctl --no-reload disable $SERVICE > /dev/null 2>&1 || :
-      %{_bindir}/systemctl stop $SERVICE > /dev/null 2>&1 || :
+      /usr/bin/systemctl --no-reload disable $SERVICE > /dev/null 2>&1 || :
+      /usr/bin/systemctl stop $SERVICE > /dev/null 2>&1 || :
     done
   fi
 fi
@@ -840,7 +840,7 @@ fi
 if [ $1 = 1 ] ; then
   # Restart on upgrade, but only if "CEPH_AUTO_RESTART_ON_UPGRADE" is set to
   # "yes". In any case: if units are not running, do not touch them.
-  SYSCONF_CEPH=%{_sysconfdir}/sysconfig/ceph
+  SYSCONF_CEPH=/etc/sysconfig/ceph
   if [ -f $SYSCONF_CEPH -a -r $SYSCONF_CEPH ] ; then
     source $SYSCONF_CEPH
   fi
@@ -848,7 +848,7 @@ if [ $1 = 1 ] ; then
     SERVICE_LIST=$(systemctl | grep -E '^ceph-mon@|^ceph-create-keys@|^ceph-osd@|^ceph-mds@|^ceph-disk-'  | cut -d' ' -f1)
     if [ -n "$SERVICE_LIST" ]; then
       for SERVICE in $SERVICE_LIST; do
-        %{_bindir}/systemctl try-restart $SERVICE > /dev/null 2>&1 || :
+        /usr/bin/systemctl try-restart $SERVICE > /dev/null 2>&1 || :
       done
     fi
   fi
@@ -910,8 +910,8 @@ fi
 CEPH_GROUP_ID=167
 CEPH_USER_ID=167
 %if 0%{?rhel} || 0%{?fedora}
-%{_sbindir}/groupadd ceph -g $CEPH_GROUP_ID -o -r 2>/dev/null || :
-%{_sbindir}/useradd ceph -u $CEPH_USER_ID -o -r -g ceph -s /sbin/nologin -c "Ceph daemons" -d %{_localstatedir}/lib/ceph 2>/dev/null || :
+/usr/sbin/groupadd ceph -g $CEPH_GROUP_ID -o -r 2>/dev/null || :
+/usr/sbin/useradd ceph -u $CEPH_USER_ID -o -r -g ceph -s /sbin/nologin -c "Ceph daemons" -d /var/lib/ceph 2>/dev/null || :
 %endif
 %if 0%{?suse_version}
 if ! getent group ceph >/dev/null ; then
@@ -922,7 +922,7 @@ fi
 if ! getent passwd ceph >/dev/null ; then
     CEPH_USER_ID_OPTION=""
     getent passwd $CEPH_USER_ID >/dev/null || CEPH_USER_ID_OPTION="-u $CEPH_USER_ID"
-    useradd ceph $CEPH_USER_ID_OPTION -r -g ceph -s /sbin/nologin -c "Ceph daemons" -d %{_localstatedir}/lib/ceph 2>/dev/null || :
+    useradd ceph $CEPH_USER_ID_OPTION -r -g ceph -s /sbin/nologin -c "Ceph daemons" -d /var/lib/ceph 2>/dev/null || :
 fi
 %endif
 exit 0
@@ -933,8 +933,8 @@ exit 0
 %postun common
 # Package removal cleanup
 if [ "$1" -eq "0" ] ; then
-    rm -rf %{_localstatedir}/log/ceph
-    rm -rf %{_sysconfdir}/ceph
+    rm -rf /var/log/ceph
+    rm -rf /etc/ceph
 fi
 
 #################################################################################
@@ -1003,7 +1003,7 @@ fi
   # explicit systemctl daemon-reload (that's the only relevant bit of
   # service_add_post; the rest is all sysvinit --> systemd migration which
   # isn't applicable in this context (see above comment).
-  %{_bindir}/systemctl daemon-reload >/dev/null 2>&1 || :
+  /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
 %endif
 
 %preun radosgw
@@ -1012,8 +1012,8 @@ if [ $1 = 0 ] ; then
   SERVICE_LIST=$(systemctl | grep -E '^ceph-radosgw@'  | cut -d' ' -f1)
   if [ -n "$SERVICE_LIST" ]; then
     for SERVICE in $SERVICE_LIST; do
-      %{_bindir}/systemctl --no-reload disable $SERVICE > /dev/null 2>&1 || :
-      %{_bindir}/systemctl stop $SERVICE > /dev/null 2>&1 || :
+      /usr/bin/systemctl --no-reload disable $SERVICE > /dev/null 2>&1 || :
+      /usr/bin/systemctl stop $SERVICE > /dev/null 2>&1 || :
     done
   fi
 fi
@@ -1023,7 +1023,7 @@ fi
 if [ $1 = 1 ] ; then
   # Restart on upgrade, but only if "CEPH_AUTO_RESTART_ON_UPGRADE" is set to
   # "yes". In any case: if units are not running, do not touch them.
-  SYSCONF_CEPH=%{_sysconfdir}/sysconfig/ceph
+  SYSCONF_CEPH=/etc/sysconfig/ceph
   if [ -f $SYSCONF_CEPH -a -r $SYSCONF_CEPH ] ; then
     source $SYSCONF_CEPH
   fi
@@ -1031,7 +1031,7 @@ if [ $1 = 1 ] ; then
     SERVICE_LIST=$(systemctl | grep -E '^ceph-radosgw@'  | cut -d' ' -f1)
     if [ -n "$SERVICE_LIST" ]; then
       for SERVICE in $SERVICE_LIST; do
-        %{_bindir}/systemctl try-restart $SERVICE > /dev/null 2>&1 || :
+        /usr/bin/systemctl try-restart $SERVICE > /dev/null 2>&1 || :
       done
     fi
   fi
@@ -1268,13 +1268,13 @@ ln -sf %{_libdir}/librbd.so.1 /usr/lib64/qemu/librbd.so.1
 
 %post selinux
 # Install the policy
-OLD_POLVER=$(%{_sbindir}/semodule -l | grep -P '^ceph[\t ]' | awk '{print $2}')
-%{_sbindir}/semodule -n -i %{_datadir}/selinux/packages/ceph.pp
-NEW_POLVER=$(%{_sbindir}/semodule -l | grep -P '^ceph[\t ]' | awk '{print $2}')
+OLD_POLVER=$(/usr/sbin/semodule -l | grep -P '^ceph[\t ]' | awk '{print $2}')
+/usr/sbin/semodule -n -i /usr/share/selinux/packages/ceph.pp
+NEW_POLVER=$(/usr/sbin/semodule -l | grep -P '^ceph[\t ]' | awk '{print $2}')
 
 # Load the policy if SELinux is enabled
-if %{_sbindir}/selinuxenabled; then
-    %{_sbindir}/load_policy
+if /usr/sbin/selinuxenabled; then
+    /usr/sbin/load_policy
 else
     # Do not relabel if selinux is not enabled
     exit 0
@@ -1286,12 +1286,12 @@ if test "$OLD_POLVER" == "$NEW_POLVER"; then
 fi
 
 # Check whether the daemons are running
-%{_bindir}/systemctl status ceph.target > /dev/null 2>&1
+/usr/bin/systemctl status ceph.target > /dev/null 2>&1
 STATUS=$?
 
 # Stop the daemons if they were running
 if test $STATUS -eq 0; then
-    %{_bindir}/systemctl stop ceph.target > /dev/null 2>&1
+    /usr/bin/systemctl stop ceph.target > /dev/null 2>&1
 fi
 
 # Now, relabel the files
@@ -1299,7 +1299,7 @@ fi
 
 # Start the daemons iff they were running before
 if test $STATUS -eq 0; then
-    %{_bindir}/systemctl start ceph.target > /dev/null 2>&1 || :
+    /usr/bin/systemctl start ceph.target > /dev/null 2>&1 || :
 fi
 
 exit 0
@@ -1307,23 +1307,23 @@ exit 0
 %postun selinux
 if [ $1 -eq 0 ]; then
     # Remove the module
-    %{_sbindir}/semodule -n -r ceph
+    /usr/sbin/semodule -n -r ceph
 
     # Reload the policy if SELinux is enabled
-    if %{_sbindir}/selinuxenabled ; then
-        %{_sbindir}/load_policy
+    if /usr/sbin/selinuxenabled ; then
+        /usr/sbin/load_policy
     else
         # Do not relabel if SELinux is not enabled
         exit 0
     fi
 
     # Check whether the daemons are running
-    %{_bindir}/systemctl status ceph.target > /dev/null 2>&1
+    /usr/bin/systemctl status ceph.target > /dev/null 2>&1
     STATUS=$?
 
     # Stop the daemons if they were running
     if test $STATUS -eq 0; then
-        %{_bindir}/systemctl stop ceph.target > /dev/null 2>&1
+        /usr/bin/systemctl stop ceph.target > /dev/null 2>&1
     fi
 
     # Now, relabel the files
@@ -1331,7 +1331,7 @@ if [ $1 -eq 0 ]; then
 
     # Start the daemons if they were running before
     if test $STATUS -eq 0; then
-	%{_bindir}/systemctl start ceph.target > /dev/null 2>&1 || :
+	/usr/bin/systemctl start ceph.target > /dev/null 2>&1 || :
     fi
 fi
 exit 0
