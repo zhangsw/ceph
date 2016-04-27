@@ -162,27 +162,37 @@ struct client_callback_args {
 struct dir_result_t {
   static const int SHIFT = 28;
   static const int64_t MASK = (1 << SHIFT) - 1;
+  static const int64_t HASH = 0xFFULL << (SHIFT + 24); // impossible frag bits
   static const loff_t END = 1ULL << (SHIFT + 32);
 
-  static uint64_t make_fpos(unsigned frag, unsigned off) {
-    return ((uint64_t)frag << SHIFT) | (uint64_t)off;
+  static uint64_t make_fpos(unsigned h, unsigned l, bool hash) {
+    uint64_t v =  ((uint64_t)h<< SHIFT) | (uint64_t)l;
+    if (hash)
+      v |= HASH;
+    else
+      assert((v & HASH) != HASH);
+    return v;
   }
-  static unsigned fpos_frag(uint64_t p) {
-    return (p & ~END) >> SHIFT;
+  static unsigned fpos_high(uint64_t p) {
+    unsigned v = (p & (END-1)) >> SHIFT;
+    if ((p & HASH) == HASH)
+      return ceph_frag_value(v);
+    return v;
   }
-  static unsigned fpos_off(uint64_t p) {
+  static unsigned fpos_low(uint64_t p) {
     return p & MASK;
   }
-
 
   InodeRef inode;
   int owner_uid;
   int owner_gid;
 
-  int64_t offset;        // high bits: frag_t, low bits: an offset
+  int64_t offset;        // hash order:
+			 //   (0xff << 56) | ((24 bits hash) << 28) | (collision offset);
+			 // frag+name order;
+			 //   ((frag value) << 28) | (offset in frag);
 
-  uint64_t this_offset;  // offset of last chunk, adjusted for . and ..
-  uint64_t next_offset;  // offset of next chunk (last_name's + 1)
+  unsigned next_offset;  // offset of next chunk (last_name's + 1)
   string last_name;      // last entry in previous chunk
 
   uint64_t release_count;
@@ -190,37 +200,49 @@ struct dir_result_t {
   int start_shared_gen;  // dir shared_gen at start of readdir
 
   frag_t buffer_frag;
-  vector<pair<string,InodeRef> > *buffer;
+
+  struct dentry {
+    int64_t offset;
+    string name;
+    InodeRef inode;
+    dentry(int64_t o) : offset(o) {}
+    dentry(int64_t o, const string& n, const InodeRef& in) :
+      offset(o), name(n), inode(in) {}
+    bool operator<(const dentry& o) {
+      return offset < o.offset;
+    }
+  };
+  vector<dentry> buffer;
 
   string at_cache_name;  // last entry we successfully returned
 
   explicit dir_result_t(Inode *in);
 
-  frag_t frag() { return frag_t(offset >> SHIFT); }
-  unsigned fragpos() { return offset & MASK; }
+  unsigned offset_high() { return fpos_high(offset); }
+  unsigned offset_low() { return fpos_low(offset); }
 
-  void next_frag() {
-    frag_t fg = offset >> SHIFT;
-    if (fg.is_rightmost())
-      set_end();
-    else 
-      set_frag(fg.next());
-  }
-  void set_frag(frag_t f) {
-    offset = (uint64_t)f << SHIFT;
-    assert(sizeof(offset) == 8);
-  }
   void set_end() { offset |= END; }
   bool at_end() { return (offset & END); }
+
+  void set_hash_order() { offset |= HASH; }
+  bool hash_order() { return (offset & HASH) == HASH; }
+
+  bool is_cached() {
+    if (buffer.empty())
+      return false;
+    if (hash_order()) {
+      return buffer_frag.contains(offset_high());
+    } else {
+      return buffer_frag == frag_t(offset_high());
+    }
+  }
 
   void reset() {
     last_name.clear();
     at_cache_name.clear();
     next_offset = 2;
-    this_offset = 0;
     offset = 0;
-    delete buffer;
-    buffer = 0;
+    buffer.clear();
   }
 };
 

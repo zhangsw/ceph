@@ -1083,7 +1083,7 @@ int MetadataTool::read_dentry(inodeno_t parent_ino, frag_t frag,
 
 
   std::string key;
-  dentry_key_t dn_key(CEPH_NOSNAP, dname.c_str());
+  dentry_key_t dn_key(CEPH_NOSNAP, dname.c_str(), 0);
   dn_key.encode(key);
 
   std::set<std::string> keys;
@@ -1545,7 +1545,7 @@ int MetadataDriver::inject_linkage(
   object_t frag_oid = InodeStore::get_object_name(dir_ino, fragment, "");
 
   std::string key;
-  dentry_key_t dn_key(snap, dname.c_str());
+  dentry_key_t dn_key(snap, dname.c_str(), 0);
   dn_key.encode(key);
 
   bufferlist dentry_bl;

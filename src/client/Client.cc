@@ -175,10 +175,9 @@ bool Client::CommandHook::call(std::string command, cmdmap_t& cmdmap,
 // -------------
 
 dir_result_t::dir_result_t(Inode *in)
-  : inode(in), owner_uid(-1), owner_gid(-1), offset(0), this_offset(2),
-    next_offset(2), release_count(0), ordered_count(0), start_shared_gen(0),
-    buffer(0) {
-}
+  : inode(in), owner_uid(-1), owner_gid(-1), offset(0), next_offset(2),
+    release_count(0), ordered_count(0), start_shared_gen(0)
+  { }
 
 void Client::_reset_faked_inos()
 {
@@ -703,11 +702,11 @@ void Client::trim_dentry(Dentry *dn)
 		 << " in dir " << hex << dn->dir->parent_inode->ino 
 		 << dendl;
   if (dn->inode) {
-    dn->dir->release_count++;
-    if (dn->dir->parent_inode->flags & I_COMPLETE) {
-      ldout(cct, 10) << " clearing (I_COMPLETE|I_DIR_ORDERED) on "
-		     << *dn->dir->parent_inode << dendl;
-      dn->dir->parent_inode->flags &= ~(I_COMPLETE | I_DIR_ORDERED);
+    Inode *diri = dn->dir->parent_inode;
+    diri->dir_release_count++;
+    if (diri->flags & I_COMPLETE) {
+      ldout(cct, 10) << " clearing (I_COMPLETE|I_DIR_ORDERED) on " << *diri << dendl;
+      diri->flags &= ~(I_COMPLETE | I_DIR_ORDERED);
     }
   }
   unlink(dn, false, false);  // drop dir, drop dentry
@@ -992,19 +991,20 @@ Dentry *Client::insert_dentry_inode(Dir *dir, const string& dname, LeaseStat *dl
     InodeRef tmp_ref(in);
     if (old_dentry) {
       if (old_dentry->dir != dir) {
-	old_dentry->dir->ordered_count++;
-	if (old_dentry->dir->parent_inode->flags & I_DIR_ORDERED) {
-	  ldout(cct, 10) << " clearing I_DIR_ORDERED on "
-			 << *old_dentry->dir->parent_inode << dendl;
-	  old_dentry->dir->parent_inode->flags &= ~I_DIR_ORDERED;
+	Inode *old_diri = old_dentry->dir->parent_inode;
+	old_diri->dir_ordered_count++;
+	if (old_diri->flags & I_DIR_ORDERED) {
+	  ldout(cct, 10) << " clearing I_DIR_ORDERED on " << *old_diri << dendl;
+	  old_diri->flags &= ~I_DIR_ORDERED;
 	}
       }
       unlink(old_dentry, dir == old_dentry->dir, false);  // drop dentry, keep dir open if its the same dir
     }
-    dir->ordered_count++;
-    if (dir->parent_inode->flags & I_DIR_ORDERED) {
-	ldout(cct, 10) << " clearing I_DIR_ORDERED on " << *dir->parent_inode << dendl;
-	dir->parent_inode->flags &= ~I_DIR_ORDERED;
+    Inode *diri = dir->parent_inode;
+    diri->dir_ordered_count++;
+    if (diri->flags & I_DIR_ORDERED) {
+	ldout(cct, 10) << " clearing I_DIR_ORDERED on " << *diri << dendl;
+	diri->flags &= ~I_DIR_ORDERED;
     }
     dn = link(dir, dname, in, dn);
   }
@@ -1078,7 +1078,8 @@ void Client::insert_readdir_results(MetaRequest *request, MetaSession *session, 
   ConnectionRef con = request->reply->get_connection();
   uint64_t features = con->get_features();
 
-  assert(request->readdir_result.empty());
+  dir_result_t *dirp = request->dirp;
+  assert(dirp);
 
   // the extra buffer list is only set for readdir and lssnap replies
   bufferlist::iterator p = reply->get_extra_bl().begin();
@@ -1096,31 +1097,45 @@ void Client::insert_readdir_results(MetaRequest *request, MetaSession *session, 
     // dirstat
     DirStat dst(p);
     __u32 numdn;
-    __u8 complete, end;
+    __u16 flags;
     ::decode(numdn, p);
-    ::decode(end, p);
-    ::decode(complete, p);
+    ::decode(flags, p);
 
-    frag_t fg = request->readdir_frag;
-    uint64_t readdir_offset = request->readdir_offset;
-    string readdir_start = request->readdir_start;
+    bool end = ((unsigned)flags & CEPH_READDIR_FRAG_END);
+    bool hash_order = ((unsigned)flags & CEPH_READDIR_HASH_ORDER);
+
+    frag_t fg = (unsigned)request->head.args.readdir.frag;
+    unsigned readdir_offset = dirp->next_offset;
+    string readdir_start = dirp->last_name;
+
+    unsigned last_hash = 0;
+    if (!readdir_start.empty())
+      last_hash = ceph_frag_value(diri->hash_dentry_name(readdir_start));
+
     if (fg != dst.frag) {
       ldout(cct, 10) << "insert_trace got new frag " << fg << " -> " << dst.frag << dendl;
       fg = dst.frag;
-      if (fg.is_leftmost())
+      if (!hash_order) {
 	readdir_offset = 2;
-      else
-	readdir_offset = 0;
-      readdir_start.clear();
+	readdir_start.clear();
+	dirp->offset = dir_result_t::make_fpos(fg, readdir_offset, false);
+      }
     }
 
-    ldout(cct, 10) << __func__ << " " << numdn << " readdir items, end=" << (int)end
-		   << ", offset " << readdir_offset
+    ldout(cct, 10) << __func__ << " " << numdn << " readdir items, end=" << end
+		   << ", hash_order=" << hash_order << ", offset " << readdir_offset
 		   << ", readdir_start " << readdir_start << dendl;
 
-    request->readdir_reply_frag = fg;
-    request->readdir_end = end;
-    request->readdir_num = numdn;
+    if (fg.is_leftmost() && readdir_offset == 2) {
+      dirp->release_count = diri->dir_release_count;
+      dirp->ordered_count = diri->dir_ordered_count;
+      dirp->start_shared_gen = diri->shared_gen;
+    }
+
+    dirp->buffer_frag = fg;
+
+    _readdir_drop_dirp_buffer(dirp);
+    dirp->buffer.reserve(numdn);
 
     string dname;
     LeaseStat dlease;
@@ -1150,15 +1165,28 @@ void Client::insert_readdir_results(MetaRequest *request, MetaSession *session, 
 	// new dn
 	dn = link(dir, dname, in, NULL);
       }
+
       update_dentry_lease(dn, &dlease, request->sent_stamp, session);
-      dn->offset = dir_result_t::make_fpos(fg, i + readdir_offset);
-
+      if (hash_order) {
+	unsigned hash = ceph_frag_value(diri->hash_dentry_name(dname));
+	if (hash != last_hash)
+	  readdir_offset = 2;
+	last_hash = hash;
+	dn->offset = dir_result_t::make_fpos(hash, readdir_offset++, true);
+      } else {
+	dn->offset = dir_result_t::make_fpos(fg, readdir_offset++, false);
+      }
       // add to cached result list
-      request->readdir_result.push_back(pair<string,InodeRef>(dname, in));
-
+      dirp->buffer.push_back(dir_result_t::dentry(dn->offset, dname, in));
       ldout(cct, 15) << __func__ << "  " << hex << dn->offset << dec << ": '" << dname << "' -> " << in->ino << dendl;
     }
-    request->readdir_last_name = dname;
+
+    dirp->last_name = dname;
+    if (end) {
+      dirp->next_offset = 2;
+    } else {
+      dirp->next_offset = readdir_offset;
+    }
 
     if (dir->is_empty())
       close_dir(dir);
@@ -1190,10 +1218,11 @@ Inode* Client::insert_trace(MetaRequest *request, MetaSession *session)
 
     Dentry *d = request->dentry();
     if (d && d->dir) {
-      d->dir->release_count++;
-      if (d->dir->parent_inode->flags & I_COMPLETE) {
-	ldout(cct, 10) << " clearing (I_COMPLETE|I_DIR_ORDERED) on " << *d->dir->parent_inode << dendl;
-	d->dir->parent_inode->flags &= ~(I_COMPLETE | I_DIR_ORDERED);
+      Inode *diri = d->dir->parent_inode;
+      diri->dir_release_count++;
+      if (diri->flags & I_COMPLETE) {
+	ldout(cct, 10) << " clearing (I_COMPLETE|I_DIR_ORDERED) on " << *diri << dendl;
+	diri->flags &= ~(I_COMPLETE | I_DIR_ORDERED);
       }
     }
 
@@ -1272,7 +1301,7 @@ Inode* Client::insert_trace(MetaRequest *request, MetaSession *session)
       if (diri->dir && diri->dir->dentries.count(dname)) {
 	Dentry *dn = diri->dir->dentries[dname];
 	if (dn->inode) {
-	  diri->dir->ordered_count++;
+	  diri->dir_ordered_count++;
 	  if (diri->flags & I_DIR_ORDERED) {
 	    ldout(cct, 10) << " clearing I_DIR_ORDERED on " << *diri << dendl;
 	    diri->flags &= ~I_DIR_ORDERED;
@@ -6821,14 +6850,8 @@ int Client::_opendir(Inode *in, dir_result_t **dirpp, int uid, int gid)
     return -ENOTDIR;
   *dirpp = new dir_result_t(in);
   opened_dirs.insert(*dirpp);
-  if (in->dir) {
-    (*dirpp)->release_count = in->dir->release_count;
-    (*dirpp)->ordered_count = in->dir->ordered_count;
-  }
-  (*dirpp)->start_shared_gen = in->shared_gen;
   (*dirpp)->owner_uid = uid;
   (*dirpp)->owner_gid = gid;
-  ldout(cct, 10) << "_opendir " << in->ino << ", our cache says the first dirfrag is " << (*dirpp)->frag() << dendl;
   ldout(cct, 3) << "_opendir(" << in->ino << ") = " << 0 << " (" << *dirpp << ")" << dendl;
   return 0;
 }
@@ -6879,25 +6902,26 @@ void Client::seekdir(dir_result_t *dirp, loff_t offset)
   Mutex::Locker lock(client_lock);
 
   ldout(cct, 3) << "seekdir(" << dirp << ", " << offset << ")" << dendl;
-  dir_result_t *d = static_cast<dir_result_t*>(dirp);
 
-  if (offset == 0 ||
-      dir_result_t::fpos_frag(offset) != d->frag() ||
-      dir_result_t::fpos_off(offset) < d->fragpos()) {
-    _readdir_drop_dirp_buffer(d);
-    d->reset();
+  if (dirp->hash_order()) {
+    if (dirp->offset > offset) {
+      _readdir_drop_dirp_buffer(dirp);
+      dirp->reset();
+    }
+  } else {
+    if (offset == 0 ||
+	dirp->buffer_frag != frag_t(dir_result_t::fpos_high(offset)) ||
+	dirp->offset_low() > dir_result_t::fpos_low(offset))  {
+      _readdir_drop_dirp_buffer(dirp);
+      dirp->reset();
+    }
   }
 
-  if (offset > d->offset)
-    d->release_count--;   // bump if we do a forward seek
+  if (offset > dirp->offset)
+    dirp->release_count--;   // bump if we do a forward seek
 
-  d->offset = offset;
-  if (!d->frag().is_leftmost() && d->next_offset == 2)
-    d->next_offset = 0;  // not 2 on non-leftmost frags!
+  dirp->offset = offset;
 }
-
-
-
 
 
 //struct dirent {
@@ -6925,14 +6949,26 @@ void Client::fill_dirent(struct dirent *de, const char *name, int type, uint64_t
 
 void Client::_readdir_next_frag(dir_result_t *dirp)
 {
-  frag_t fg = dirp->frag();
+  frag_t fg = dirp->buffer_frag;
+
+  if (fg.is_rightmost()) {
+    ldout(cct, 10) << "_readdir_next_frag advance from " << fg << " to END" << dendl;
+    dirp->set_end();
+    return;
+  }
 
   // advance
-  dirp->next_frag();
-  if (dirp->at_end()) {
-    ldout(cct, 10) << "_readdir_next_frag advance from " << fg << " to END" << dendl;
+  fg = fg.next();
+  ldout(cct, 10) << "_readdir_next_frag advance from " << dirp->buffer_frag << " to " << fg << dendl;
+
+  if (dirp->hash_order()) {
+    // keep last_name
+    int64_t new_offset = dir_result_t::make_fpos(fg.value(), 2, true);
+    if (dirp->offset < new_offset) // don't decrease offset
+      dirp->offset = new_offset;
   } else {
-    ldout(cct, 10) << "_readdir_next_frag advance from " << fg << " to " << dirp->frag() << dendl;
+    dirp->last_name.clear();
+    dirp->offset = dir_result_t::make_fpos(fg, 2, false);
     _readdir_rechoose_frag(dirp);
   }
 }
@@ -6940,21 +6976,24 @@ void Client::_readdir_next_frag(dir_result_t *dirp)
 void Client::_readdir_rechoose_frag(dir_result_t *dirp)
 {
   assert(dirp->inode);
-  frag_t cur = dirp->frag();
-  frag_t f = dirp->inode->dirfragtree[cur.value()];
-  if (f != cur) {
-    ldout(cct, 10) << "_readdir_rechoose_frag frag " << cur << " maps to " << f << dendl;
-    dirp->set_frag(f);
+
+  if (dirp->hash_order())
+    return;
+
+  frag_t cur = frag_t(dirp->offset_high());
+  frag_t fg = dirp->inode->dirfragtree[cur.value()];
+  if (fg != cur) {
+    ldout(cct, 10) << "_readdir_rechoose_frag frag " << cur << " maps to " << fg << dendl;
+    dirp->offset = dir_result_t::make_fpos(fg, 2, false);
+    dirp->last_name.clear();
+    dirp->next_offset = 2;
   }
 }
 
 void Client::_readdir_drop_dirp_buffer(dir_result_t *dirp)
 {
   ldout(cct, 10) << "_readdir_drop_dirp_buffer " << dirp << dendl;
-  if (dirp->buffer) {
-    delete dirp->buffer;
-    dirp->buffer = NULL;
-  }
+  dirp->buffer.clear();
 }
 
 int Client::_readdir_get_frag(dir_result_t *dirp)
@@ -6963,11 +7002,14 @@ int Client::_readdir_get_frag(dir_result_t *dirp)
   assert(dirp->inode);
 
   // get the current frag.
-  frag_t fg = dirp->frag();
+  frag_t fg;
+  if (dirp->hash_order())
+    fg = dirp->inode->dirfragtree[dirp->offset_high()];
+  else
+    fg = frag_t(dirp->offset_high());
   
   ldout(cct, 10) << "_readdir_get_frag " << dirp << " on " << dirp->inode->ino << " fg " << fg
-	   << " next_offset " << dirp->next_offset
-	   << dendl;
+		 << " offset " << hex << dirp->offset << dendl;
 
   int op = CEPH_MDS_OP_READDIR;
   if (dirp->inode && dirp->inode->snapid == CEPH_SNAPDIR)
@@ -6981,13 +7023,10 @@ int Client::_readdir_get_frag(dir_result_t *dirp)
   req->set_filepath(path); 
   req->set_inode(diri.get());
   req->head.args.readdir.frag = fg;
-  if (dirp->last_name.length()) {
+  req->head.args.readdir.flags = CEPH_READDIR_REPLY_BITFLAGS;
+  if (dirp->last_name.length())
     req->path2.set_path(dirp->last_name.c_str());
-    req->readdir_start = dirp->last_name;
-  }
-  req->readdir_offset = dirp->next_offset;
-  req->readdir_frag = fg;
-  
+  req->dirp = dirp;
   
   bufferlist dirbl;
   int res = make_request(req, dirp->owner_uid, dirp->owner_gid, NULL, NULL, -1, &dirbl);
@@ -6999,38 +7038,8 @@ int Client::_readdir_get_frag(dir_result_t *dirp)
   }
 
   if (res == 0) {
-    // stuff dir contents to cache, dir_result_t
-    assert(diri);
-
-    _readdir_drop_dirp_buffer(dirp);
-
-    dirp->buffer = new vector<pair<string,InodeRef> >;
-    dirp->buffer->swap(req->readdir_result);
-
-    if (fg != req->readdir_reply_frag) {
-      fg = req->readdir_reply_frag;
-      if (fg.is_leftmost())
-	dirp->next_offset = 2;
-      else
-	dirp->next_offset = 0;
-      dirp->offset = dir_result_t::make_fpos(fg, dirp->next_offset);
-    }
-    dirp->buffer_frag = fg;
-    dirp->this_offset = dirp->next_offset;
     ldout(cct, 10) << "_readdir_get_frag " << dirp << " got frag " << dirp->buffer_frag
-	     << " this_offset " << dirp->this_offset
-	     << " size " << dirp->buffer->size() << dendl;
-
-    if (req->readdir_end) {
-      dirp->last_name.clear();
-      if (fg.is_rightmost())
-	dirp->next_offset = 2;
-      else
-	dirp->next_offset = 0;
-    } else {
-      dirp->last_name = req->readdir_last_name;
-      dirp->next_offset += req->readdir_num;
-    }
+		   << " size " << dirp->buffer.size() << dendl;
   } else {
     ldout(cct, 10) << "_readdir_get_frag got error " << res << ", setting end flag" << dendl;
     dirp->set_end();
@@ -7059,6 +7068,7 @@ int Client::_readdir_cache_cb(dir_result_t *dirp, add_dirent_cb_t cb, void *p)
     if (it == dir->dentries.end())
       return -EAGAIN;
     Dentry *dn = it->second;
+    assert(dn->offset == dirp->offset - 1);
     pd = xlist<Dentry*>::iterator(&dn->item_dentry_list);
     ++pd;
   }
@@ -7084,12 +7094,13 @@ int Client::_readdir_cache_cb(dir_result_t *dirp, add_dirent_cb_t cb, void *p)
     struct stat st;
     struct dirent de;
     int stmask = fill_stat(dn->inode, &st);
-    fill_dirent(&de, dn->name.c_str(), st.st_mode, st.st_ino, dirp->offset + 1);
-      
+
     uint64_t next_off = dn->offset + 1;
     ++pd;
     if (pd.end())
       next_off = dir_result_t::END;
+
+    fill_dirent(&de, dn->name.c_str(), st.st_mode, st.st_ino, next_off);
 
     dn_name = dn->name; // fill in name while we have lock
 
@@ -7097,14 +7108,16 @@ int Client::_readdir_cache_cb(dir_result_t *dirp, add_dirent_cb_t cb, void *p)
     int r = cb(p, &de, &st, stmask, next_off);  // _next_ offset
     client_lock.Lock();
     ldout(cct, 15) << " de " << de.d_name << " off " << hex << dn->offset << dec
-	     << " = " << r
-	     << dendl;
+		   << " = " << r << dendl;
     if (r < 0) {
-      dirp->next_offset = next_off - 1;
       return r;
     }
 
-    dirp->next_offset = dirp->offset = next_off;
+    dirp->offset = next_off;
+    if (dirp->at_end())
+      dirp->next_offset = 2;
+    else
+      dirp->next_offset = dirp->offset_low();
     dirp->at_cache_name = dn_name; // we successfully returned this one; update!
     if (r > 0)
       return r;
@@ -7121,18 +7134,14 @@ int Client::readdir_r_cb(dir_result_t *d, add_dirent_cb_t cb, void *p)
 
   dir_result_t *dirp = static_cast<dir_result_t*>(d);
 
-  ldout(cct, 10) << "readdir_r_cb " << *dirp->inode << " offset " << hex << dirp->offset << dec
-	   << " frag " << dirp->frag() << " fragpos " << hex << dirp->fragpos() << dec
-	   << " at_end=" << dirp->at_end()
-	   << dendl;
+  ldout(cct, 10) << "readdir_r_cb " << *dirp->inode << " offset " << hex << dirp->offset
+		 << dec << " at_end=" << dirp->at_end()
+		 << " hash_order=" << dirp->hash_order() << dendl;
 
   struct dirent de;
   struct stat st;
   memset(&de, 0, sizeof(de));
   memset(&st, 0, sizeof(st));
-
-  frag_t fg = dirp->frag();
-  uint32_t off = dirp->fragpos();
 
   InodeRef& diri = dirp->inode;
 
@@ -7154,31 +7163,30 @@ int Client::readdir_r_cb(dir_result_t *d, add_dirent_cb_t cb, void *p)
       return r;
 
     dirp->offset = next_off;
-    off = next_off;
     if (r > 0)
       return r;
   }
   if (dirp->offset == 1) {
     ldout(cct, 15) << " including .." << dendl;
+    uint64_t next_off = 2;
     if (!diri->dn_set.empty()) {
       InodeRef& in = diri->get_first_parent()->inode;
       fill_stat(in, &st);
-      fill_dirent(&de, "..", S_IFDIR, st.st_ino, 2);
+      fill_dirent(&de, "..", S_IFDIR, st.st_ino, next_off);
     } else {
       /* must be at the root (no parent),
        * so we add the dotdot with a special inode (3) */
-      fill_dirent(&de, "..", S_IFDIR, CEPH_INO_DOTDOT, 2);
+      fill_dirent(&de, "..", S_IFDIR, CEPH_INO_DOTDOT, next_off);
     }
 
 
     client_lock.Unlock();
-    int r = cb(p, &de, &st, -1, 2);
+    int r = cb(p, &de, &st, -1, next_off);
     client_lock.Lock();
     if (r < 0)
       return r;
 
-    dirp->offset = 2;
-    off = 2;
+    dirp->offset = next_off;
     if (r > 0)
       return r;
   }
@@ -7206,43 +7214,43 @@ int Client::readdir_r_cb(dir_result_t *d, add_dirent_cb_t cb, void *p)
     if (dirp->at_end())
       return 0;
 
-    if (dirp->buffer_frag != dirp->frag() || dirp->buffer == NULL) {
+    if (!dirp->is_cached()) {
       int r = _readdir_get_frag(dirp);
       if (r)
 	return r;
       // _readdir_get_frag () may updates dirp->offset if the replied dirfrag is
       // different than the requested one. (our dirfragtree was outdated)
-      fg = dirp->buffer_frag;
-      off = dirp->fragpos();
     }
+    frag_t fg = dirp->buffer_frag;
 
-    ldout(cct, 10) << "off " << off << " this_offset " << hex << dirp->this_offset << dec << " size " << dirp->buffer->size()
-	     << " frag " << fg << dendl;
+    ldout(cct, 10) << "frag " << fg << " buffer size " << dirp->buffer.size()
+		   << " offset " << hex << dirp->offset << dendl;
 
-    dirp->offset = dir_result_t::make_fpos(fg, off);
-    while (off >= dirp->this_offset &&
-	   off - dirp->this_offset < dirp->buffer->size()) {
-      pair<string,InodeRef>& ent = (*dirp->buffer)[off - dirp->this_offset];
+    for (auto it = std::lower_bound(dirp->buffer.begin(), dirp->buffer.end(),
+				    dir_result_t::dentry(dirp->offset));
+	 it != dirp->buffer.end();
+	 ++it) {
+      dir_result_t::dentry &entry = *it;
 
-      int stmask = fill_stat(ent.second, &st);
-      fill_dirent(&de, ent.first.c_str(), st.st_mode, st.st_ino, dirp->offset + 1);
-      
+      uint64_t next_off = entry.offset + 1;
+      int stmask = fill_stat(entry.inode, &st);
+      fill_dirent(&de, entry.name.c_str(), st.st_mode, st.st_ino, next_off);
+
       client_lock.Unlock();
-      int r = cb(p, &de, &st, stmask, dirp->offset + 1);  // _next_ offset
+      int r = cb(p, &de, &st, stmask, next_off);  // _next_ offset
       client_lock.Lock();
-      ldout(cct, 15) << " de " << de.d_name << " off " << hex << dirp->offset << dec
-	       << " = " << r
-	       << dendl;
+
+      ldout(cct, 15) << " de " << de.d_name << " off " << hex << next_off - 1 << dec
+		     << " = " << r << dendl;
       if (r < 0)
 	return r;
-      
-      off++;
-      dirp->offset++;
+
+      dirp->offset = next_off;
       if (r > 0)
 	return r;
     }
 
-    if (dirp->last_name.length()) {
+    if (dirp->next_offset > 2) {
       ldout(cct, 10) << " fetching next chunk of this frag" << dendl;
       _readdir_drop_dirp_buffer(dirp);
       continue;  // more!
@@ -7251,15 +7259,12 @@ int Client::readdir_r_cb(dir_result_t *d, add_dirent_cb_t cb, void *p)
     if (!fg.is_rightmost()) {
       // next frag!
       _readdir_next_frag(dirp);
-      ldout(cct, 10) << " advancing to next frag: " << fg << " -> " << dirp->frag() << dendl;
-      fg = dirp->frag();
-      off = 0;
       continue;
     }
 
     if (diri->dir &&
 	diri->shared_gen == dirp->start_shared_gen &&
-	diri->dir->release_count == dirp->release_count) {
+	diri->dir_release_count == dirp->release_count) {
       if (diri->dir->ordered_count == dirp->ordered_count) {
 	ldout(cct, 10) << " marking (I_COMPLETE|I_DIR_ORDERED) on " << *diri << dendl;
 	diri->flags |= I_COMPLETE | I_DIR_ORDERED;
