@@ -378,7 +378,8 @@ void StrayManager::_advance()
 
       auto it = fetching_strays.insert(qs);
       assert(it.second);
-      to_fetch[qs.dir].insert(dentry_key_t(CEPH_NOSNAP, (it.first)->name.c_str()));
+      to_fetch[qs.dir].insert(dentry_key_t(CEPH_NOSNAP, (it.first)->name.c_str(), 
+					   qs.dir->get_inode()->hash_dentry_name(qs.name)));
       ready_for_purge.erase(q);
       continue;
     }
