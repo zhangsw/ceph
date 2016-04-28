@@ -184,8 +184,7 @@ set(crush_srcs
   crush/hash.c
   crush/CrushWrapper.cc
   crush/CrushCompiler.cc
-  crush/CrushTester.cc
-  crush/CrushLocation.cc)
+  crush/CrushTester.cc)
 
 add_library(crush STATIC ${crush_srcs})
 

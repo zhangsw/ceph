@@ -5,13 +5,11 @@ libcrush_la_SOURCES = \
 	crush/hash.c \
 	crush/CrushWrapper.cc \
 	crush/CrushCompiler.cc \
-	crush/CrushTester.cc \
-	crush/CrushLocation.cc
+	crush/CrushTester.cc
 noinst_LTLIBRARIES += libcrush.la
 
 noinst_HEADERS += \
 	crush/CrushCompiler.h \
-	crush/CrushLocation.h \
 	crush/CrushTester.h \
 	crush/CrushTreeDumper.h \
 	crush/CrushWrapper.h \
