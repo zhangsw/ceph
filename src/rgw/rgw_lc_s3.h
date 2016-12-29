@@ -106,8 +106,7 @@ public:
 
   void to_xml(ostream& out) {
     out << "<LifecycleConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">";
-    multimap<string, LCRule>::iterator iter;
-    for (iter = rule_map.begin(); iter != rule_map.end(); ++iter) {
+    for (auto iter = rule_set.begin(); iter != rule_set.end(); ++iter) {
       LCRule_S3& rule = static_cast<LCRule_S3&>(iter->second);
       rule.to_xml(cct, out);
     }

@@ -27,7 +27,8 @@ bool RGWLifecycleConfiguration_S3::xml_end(const char *el) {
   XMLObjIter iter = find("Rule");
   LCRule_S3 *rule = static_cast<LCRule_S3 *>(iter.get_next());
   while (rule) {
-    add_rule(rule);
+    if(!add_rule(rule))
+      return false;
     rule = static_cast<LCRule_S3 *>(iter.get_next());
   }
   return true;
@@ -78,13 +79,14 @@ void LCRule_S3::to_xml(CephContext *cct, ostream& out) {
 
 int RGWLifecycleConfiguration_S3::rebuild(RGWRados *store, RGWLifecycleConfiguration& dest)
 {
-  multimap<string, LCRule>::iterator iter;
-  for (iter = rule_map.begin(); iter != rule_map.end(); ++iter) {
+  for (auto iter = rule_set.begin(); iter != rule_set.end(); ++iter) {
     LCRule& src_rule = iter->second;
-    bool rule_ok = true;
+    bool rule_ok = src_rule.validate();
 
     if (rule_ok) {
       dest.add_rule(&src_rule);
+    } else {
+      return -EINVAL;
     }
   }
 
@@ -95,7 +97,7 @@ void RGWLifecycleConfiguration_S3::dump_xml(Formatter *f) const
 {
 	f->open_object_section_in_ns("LifecycleConfiguration", XMLNS_AWS_S3);
 
-    for (auto iter = rule_map.begin(); iter != rule_map.end(); ++iter) {
+    for (auto iter = rule_set.begin(); iter != rule_set.end(); ++iter) {
 		const LCRule_S3& rule = static_cast<const LCRule_S3&>(iter->second);
 		rule.dump_xml(f);
 	}

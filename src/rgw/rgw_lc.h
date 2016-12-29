@@ -20,6 +20,7 @@
 
 using namespace std;
 #define HASH_PRIME 7877
+#define MAX_ID_LEN 255
 static string lc_oid_prefix = "lc";
 static string lc_index_lock_name = "lc_process";
 
@@ -70,20 +71,19 @@ public:
   LCRule(){};
   ~LCRule(){};
 
-  bool get_id(string& _id) {
-      _id = id;
-      return true;
+  string get_id() const{
+      return id;
   }
 
-  string& get_status() {
+  string get_status() const{
       return status;
   }
   
-  string& get_prefix() {
+  string get_prefix() const{
       return prefix;
   }
 
-  LCExpiration& get_expiration() {
+  LCExpiration get_expiration() const{
     return expiration;
   }
 
@@ -102,6 +102,8 @@ public:
   void set_expiration(LCExpiration*_expiration) {
     expiration = *_expiration;
   }
+
+  bool validate() const;
   
   void encode(bufferlist& bl) const {
      ENCODE_START(1, 1, bl);
@@ -123,12 +125,34 @@ public:
 };
 WRITE_CLASS_ENCODER(LCRule)
 
+struct rule_comp 
+{
+  bool operator() (const LCRule& lhs, const LCRule& rhs) const {
+    if (lhs.get_id().compare(rhs.get_id()) == 0) {
+      return true;
+    } else {
+      string l_prefix = lhs.get_prefix();
+      string r_prefix = lhs.get_prefix();
+      if (l_prefix.length() > r_prefix.length()) {
+        if (l_prefix.compare(0, r_prefix.length(), r_prefix) == 0) {
+          return true;
+        }
+      } else {
+        if (r_prefix.compare(0, l_prefix.length(), l_prefix) == 0) {
+          return true;
+        }
+      }
+      return lhs.get_id().compare(rhs.get_id()) < 0;
+    }
+  }
+};
+
 class RGWLifecycleConfiguration
 {
 protected:
   CephContext *cct;
   map<string, int> prefix_map;
-  multimap<string, LCRule> rule_map;
+  set<LCRule, rule_comp> rule_set;
   void _add_rule(LCRule *rule);
 public:
   RGWLifecycleConfiguration(CephContext *_cct) : cct(_cct) {}
@@ -144,14 +168,13 @@ public:
 //  int get_group_perm(ACLGroupTypeEnum group, int perm_mask);
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
-    ::encode(rule_map, bl);
+    ::encode(rule_set, bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& bl) {
     DECODE_START_LEGACY_COMPAT_LEN(1, 1, 1, bl);
-    ::decode(rule_map, bl);
-    multimap<string, LCRule>::iterator iter;
-    for (iter = rule_map.begin(); iter != rule_map.end(); ++iter) {
+    ::decode(rule_set, bl);
+    for (auto iter = rule_set.begin(); iter != rule_set.end(); ++iter) {
       LCRule& rule = iter->second;
       _add_rule(&rule);
     }
@@ -160,9 +183,9 @@ public:
   void dump(Formatter *f) const;
 //  static void generate_test_instances(list<RGWAccessControlList*>& o);
 
-  void add_rule(LCRule* rule);
-
-  multimap<string, LCRule>& get_rule_map() { return rule_map; }
+  bool add_rule(LCRule* rule);
+  
+  set<LCRule, rule_comp>& get_rule_set() { return rule_set; }
   map<string, int>& get_prefix_map() { return prefix_map; }
 /*
   void create_default(string id, string name) {

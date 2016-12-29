@@ -30,16 +30,33 @@ const char* LC_STATUS[] = {
 
 using namespace std;
 using namespace librados;
-void RGWLifecycleConfiguration::add_rule(LCRule *rule)
+
+bool LCRule::validate()
 {
-  string id;
-  rule->get_id(id); // not that this will return false for groups, but that's ok, we won't search groups
-  rule_map.insert(pair<string, LCRule>(id, *rule));
-  _add_rule(rule);
+  if (id.length() > MAX_ID_LEN)
+    return false;
+  else if (status.compare("Enabled") != 0 && status.compare("Disabled") != 0)
+    return false;
+  else if (expiration.get_days() <= 0)
+    return false;
+  return true;
+}
+
+bool RGWLifecycleConfiguration::add_rule(LCRule *rule)
+{
+  pair<set<LCRule::iterator>, bool> ret;
+  ret = rule_set.insert(*rule);
+  if (ret.second) {
+    _add_rule(rule);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 void RGWLifecycleConfiguration::_add_rule(LCRule *rule)
 {
+
   prefix_map[rule->get_prefix()] = rule->get_expiration().get_days();
 }
 
