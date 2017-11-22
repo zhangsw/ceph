@@ -2792,6 +2792,136 @@ int RGWPutObjProcessor_Atomic::do_complete(size_t accounted_size, const string& 
   return 0;
 }
 
+int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
+  RGWObjState *astate;
+  int r = store->get_obj_state(static_cast<RGWObjectCtx *>(s->obj_ctx), bucket_info, rgw_obj(s->bucket, s->object), &astate);
+  if (r < 0) {
+    return r;
+  }
+  cur_size = astate->size;
+  *cur_accounted_size = astate->accounted_size;
+  cur_manifest = &astate->manifest;
+  if (!astate->exists) {
+    if (position != 0) {
+      ldout(store->ctx(), 10) << "ERROR: Append position should be zero" << dendl;
+      return -ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+    } else {
+      cur_part_num = 1;
+      head_obj.init(bucket, obj_str);
+    }
+  } else {
+    // check whether the object appendable
+    map<string, bufferlist>::iterator iter = astate->attrset.find(RGW_ATTR_APPEND_PART_NUM);
+    if (iter == astate->attrset.end()) {
+      ldout(store->ctx(), 10) << "ERROR: The object is not appendable" << dendl;
+      return -ERR_OBJECT_NOT_APPENDABLE;
+    }
+    if (position != *cur_accounted_size) {
+      ldout(store->ctx(), 10) << "ERROR: Append position should be equal to the obj size" << dendl;
+      return -ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+    }
+    head_obj = astate->obj;
+    decode(cur_part_num, iter->second);
+    cur_part_num ++;
+
+    //get the current obj etag
+    iter = astate->attrset.find(RGW_ATTR_ETAG);
+    if (iter != astate->attrset.end()) {
+      string s = rgw_string_unquote(iter->second.c_str());
+      size_t pos = s.find("-");
+      cur_etag = s.substr(0, pos);
+    }
+  }
+  //set the prefix
+  char buf[33];
+  gen_rand_alphanumeric(store->ctx(), buf, sizeof(buf) - 1);
+  string oid_prefix = obj_str;
+  oid_prefix.append(".");
+  oid_prefix.append(buf);
+  oid_prefix.append("_");
+  manifest.set_prefix(oid_prefix);
+  manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, cur_part_num);
+  
+  rgw_obj target_obj;
+  target_obj.init(bucket, obj_str);
+  r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, bucket, target_obj);
+  if (r < 0) {
+    return r;
+  }
+  cur_obj = manifest_gen.get_cur_obj(store);
+  r = prepare_init(store, NULL);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
+}
+
+int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& etag,
+                  ceph::real_time *mtime, ceph::real_time set_mtime,
+                  map<string, bufferlist>& attrs, ceph::real_time delete_at,
+                  const char *if_match, const char *if_nomatch, const string *user_data,
+                  rgw_zone_set *zones_trace) {
+  int r = complete_writing_data();
+  if (r < 0)
+    return r;
+  obj_ctx.obj.set_atomic(head_obj);
+
+  RGWRados::Object op_target(store, bucket_info, obj_ctx, head_obj);
+  //For Append obj, disable versioning
+  op_target.set_versioning_disabled(true);
+  RGWRados::Object::Write obj_op(&op_target);
+  if (cur_manifest) {
+    cur_manifest->append(manifest, store);
+    obj_op.meta.manifest = cur_manifest;
+  } else {
+    obj_op.meta.manifest = &manifest;
+  }
+  obj_op.meta.ptag = &unique_tag; /* use req_id as operation tag */
+  obj_op.meta.mtime = mtime;
+  obj_op.meta.set_mtime = set_mtime;
+  obj_op.meta.owner = bucket_info.owner;
+  obj_op.meta.flags = PUT_OBJ_CREATE;
+  obj_op.meta.delete_at = delete_at;
+  obj_op.meta.user_data = user_data;
+  obj_op.meta.zones_trace = zones_trace;
+  obj_op.meta.modify_tail = true;
+  obj_op.meta.appendable = true;
+
+  //Add the append part number
+  bufferlist cur_part_num_bl;
+  encode(cur_part_num, cur_part_num_bl);
+  attrs[RGW_ATTR_APPEND_PART_NUM] = cur_part_num_bl;
+
+  //calculate the etag
+  if (!cur_etag.empty()) {
+    MD5 hash;
+    char petag[CEPH_CRYPTO_MD5_DIGESTSIZE];
+    char final_etag[CEPH_CRYPTO_MD5_DIGESTSIZE];
+    char final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 16];
+    hex_to_buf(cur_etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
+    hash.Update((const byte *)petag, sizeof(petag));
+    hex_to_buf(etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
+    hash.Update((const byte *)petag, sizeof(petag));
+    hash.Final((byte *)final_etag);
+    buf_to_hex((unsigned char *)final_etag, sizeof(final_etag), final_etag_str);
+    snprintf(&final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2],  sizeof(final_etag_str) - CEPH_CRYPTO_MD5_DIGESTSIZE * 2,
+           "-%lld", (long long)cur_part_num);
+    bufferlist etag_bl;
+    etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
+    attrs[RGW_ATTR_ETAG] = etag_bl;
+  }
+
+  r = obj_op.write_meta(obj_len + cur_size, accounted_size + *cur_accounted_size, attrs);
+  if (r < 0) {
+    return r;
+  }
+  canceled = obj_op.meta.canceled;
+  *cur_accounted_size += accounted_size;
+  return 0;
+
+}
+
 int RGWRados::watch(const string& oid, uint64_t *watch_handle, librados::WatchCtx2 *ctx) {
   int r = control_pool_ctx.watch2(oid, watch_handle, ctx);
   if (r < 0)
@@ -6976,7 +7106,7 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
 
   r = index_op->complete(poolid, epoch, size, accounted_size,
                         meta.set_mtime, etag, content_type, &acl_bl,
-                        meta.category, meta.remove_objs, meta.user_data);
+                        meta.category, meta.remove_objs, meta.user_data, meta.appendable);
   if (r < 0)
     goto done_cancel;
 
@@ -10020,7 +10150,8 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
                                             const string& content_type,
                                             bufferlist *acl_bl,
                                             RGWObjCategory category,
-                                            list<rgw_obj_index_key> *remove_objs, const string *user_data)
+                                            list<rgw_obj_index_key> *remove_objs, const string *user_data,
+                                            bool appendable)
 {
   if (blind) {
     return 0;
@@ -10053,6 +10184,7 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
   ent.meta.owner = owner.get_id().to_str();
   ent.meta.owner_display_name = owner.get_display_name();
   ent.meta.content_type = content_type;
+  ent.meta.appendable = appendable;
 
   ret = store->cls_obj_complete_add(*bs, obj, optag, poolid, epoch, ent, category, remove_objs, bilog_flags, zones_trace);
 

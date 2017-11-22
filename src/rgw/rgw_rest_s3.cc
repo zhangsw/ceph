@@ -248,6 +248,12 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs,
   if (!version_id.empty()) {
     dump_header(s, "x-amz-version-id", version_id);
   }
+  if (attrs.find(RGW_ATTR_APPEND_PART_NUM) != attrs.end()) {
+    dump_header(s, "x-amz-object-type", "Appendable");
+    dump_header(s, "x-amz-next-append-position", s->obj_size);
+  } else {
+    dump_header(s, "x-amz-object-type", "Normal");
+  }
   
 
   if (! op_ret) {
@@ -741,6 +747,11 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 	s->formatter->dump_string("StorageClass", "STANDARD");
       }
       dump_owner(s, iter->meta.owner, iter->meta.owner_display_name);
+      if (iter->meta.appendable) {
+        s->formatter->dump_string("Type", "Appendable");
+      } else {
+        s->formatter->dump_string("Type", "Normal");
+      }
       s->formatter->close_section();
     }
     if (objs_container) {
@@ -817,6 +828,11 @@ void RGWListBucket_ObjStore_S3::send_response()
       dump_owner(s, iter->meta.owner, iter->meta.owner_display_name);
       if (s->system_request) {
         s->formatter->dump_string("RgwxTag", iter->tag);
+      }
+      if (iter->meta.appendable) {
+        s->formatter->dump_string("Type", "Appendable");
+      } else {
+        s->formatter->dump_string("Type", "Normal");
       }
       s->formatter->close_section();
     }
@@ -1341,6 +1357,17 @@ int RGWPutObj_ObjStore_S3::get_params()
     }
   }
 
+  append = s->info.args.exists("append");
+  if (append) {
+    string pos_str = s->info.args.get("position");
+    if (pos_str.empty()) {
+      return -EINVAL;
+    } else {
+      position = strtoull(pos_str.c_str(), NULL, 10);
+    }
+  }
+
+
   return RGWPutObj_ObjStore::get_params();
 }
 
@@ -1403,6 +1430,11 @@ void RGWPutObj_ObjStore_S3::send_response()
       s->formatter->close_section();
       rgw_flush_formatter_and_reset(s, s->formatter);
       return;
+    }
+  }
+  if (append) {
+    if (op_ret == 0 || op_ret == -ERR_POSITION_NOT_EQUAL_TO_LENGTH) {
+      dump_header(s, "x-amz-next-append-position", cur_accounted_size);
     }
   }
   if (s->system_request && !real_clock::is_zero(mtime)) {
@@ -3106,8 +3138,9 @@ RGWOp *RGWHandler_REST_Obj_S3::op_put()
     return new RGWPutObjTags_ObjStore_S3;
   }
 
-  if (s->init_state.src_bucket.empty())
+  if (s->init_state.src_bucket.empty()) {
     return new RGWPutObj_ObjStore_S3;
+  }
   else
     return new RGWCopyObj_ObjStore_S3;
 }

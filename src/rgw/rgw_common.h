@@ -105,6 +105,8 @@ using ceph::crypto::MD5;
 
 #define RGW_ATTR_COMPRESSION    RGW_ATTR_PREFIX "compression"
 
+#define RGW_ATTR_APPEND_PART_NUM    RGW_ATTR_PREFIX "append_part_num"
+
 /* IAM Policy */
 #define RGW_ATTR_IAM_POLICY	RGW_ATTR_PREFIX "iam-policy"
 
@@ -217,6 +219,8 @@ using ceph::crypto::MD5;
 #define ERR_MALFORMED_ACL_ERROR  2212
 #define ERR_ZONEGROUP_DEFAULT_PLACEMENT_MISCONFIGURATION 2213
 #define ERR_INVALID_ENCRYPTION_ALGORITHM                 2214
+#define ERR_POSITION_NOT_EQUAL_TO_LENGTH                 2215
+#define ERR_OBJECT_NOT_APPENDABLE                        2216
 
 #define ERR_BUSY_RESHARDING      2300
 
