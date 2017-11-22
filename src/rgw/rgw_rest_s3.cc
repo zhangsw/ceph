@@ -1413,6 +1413,19 @@ int RGWPutObj_ObjStore_S3::get_params()
     return -EINVAL;
   }
 
+  bool append = s->info.args.exists("append");
+  if (append) {
+    string pos_str = s->info.args.get("Position");
+    if (pos_str.empty()) {
+      return -EINVAL;
+    } else {
+      position = strtoull(pos_str.c_str(), NULL, 10);
+      if (position < 0) {
+        return -EINVAL;
+      }
+    }
+  }
+  
   return RGWPutObj_ObjStore::get_params();
 }
 
@@ -3205,8 +3218,9 @@ RGWOp *RGWHandler_REST_Obj_S3::op_put()
     return new RGWPutObjTags_ObjStore_S3;
   }
 
-  if (s->init_state.src_bucket.empty())
+  if (s->init_state.src_bucket.empty()) {
     return new RGWPutObj_ObjStore_S3;
+  }
   else
     return new RGWCopyObj_ObjStore_S3;
 }

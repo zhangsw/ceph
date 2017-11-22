@@ -2741,11 +2741,12 @@ public:
         rgw_zone_set *zones_trace;
         bool modify_tail;
         bool completeMultipart;
+        bool appendable;
 
         MetaParams() : mtime(NULL), rmattrs(NULL), data(NULL), manifest(NULL), ptag(NULL),
                  remove_objs(NULL), category(RGW_OBJ_CATEGORY_MAIN), flags(0),
                  if_match(NULL), if_nomatch(NULL), canceled(false), user_data(nullptr), zones_trace(nullptr),
-                 modify_tail(false),  completeMultipart(false) {}
+                 modify_tail(false),  completeMultipart(false), appendable(false) {}
       } meta;
 
       explicit Write(RGWRados::Object *_target) : target(_target) {}
@@ -3818,6 +3819,31 @@ public:
   }
 }; /* RGWChainedCacheImpl */
 
+
+class RGWPutObjProcessor_Append : public RGWPutObjProcessor_Atomic {
+  off_t position;
+  map<string, bufferlist> attrs;
+  uint64_t cur_size;
+  bool first;
+  uint64_t cur_part_num;
+  req_state *s;
+
+  RGWObjManifest *cur_manifest;
+
+protected:
+  int prepare(RGWRados *store, string *oid_rand);
+  int do_complete(size_t accounted_size, const string& etag,
+                  ceph::real_time *mtime, ceph::real_time set_mtime,
+                  map<string, bufferlist>& attrs, ceph::real_time delete_at,
+                  const char *if_match, const char *if_nomatch, const string *user_data,
+                  rgw_zone_set *zones_trace) override;
+public:
+  public:
+  bool immutable_head() { return true; }
+  RGWPutObjProcessor_Append(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s) :
+                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), s(_s), first(false) {}
+
+};
 
 #define MP_META_SUFFIX ".meta"
 

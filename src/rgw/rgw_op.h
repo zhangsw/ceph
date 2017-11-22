@@ -1030,6 +1030,8 @@ protected:
   int multipart_part_num = 0;
 
   boost::optional<ceph::real_time> delete_at;
+  bool appendable;
+  off_t position;
 
 public:
   RGWPutObj() : ofs(0),
@@ -1043,7 +1045,8 @@ public:
                 chunked_upload(0),
                 dlo_manifest(NULL),
                 slo_info(NULL),
-                olh_epoch(0) {}
+                olh_epoch(0),
+                appendable(false) {}
 
   ~RGWPutObj() override {
     delete slo_info;

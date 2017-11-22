@@ -2465,6 +2465,103 @@ void RGWObjVersionTracker::generate_new_write_ver(CephContext *cct)
 }
 
 
+int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
+  //get manifest
+  RGWRados::Object target(store, s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), rgw_obj(s->bucket, s->object));
+  RGWRados::Object::Read stat_op(&target);
+  stat_op.params.obj_size = &cur_size;
+  stat_op.params.attrs = &attrs;
+
+  r = stat_op.prepare();
+  if (r < 0 && r != -ENOENT) {
+    return r;
+  } else if (r == -ENOENT) {
+    if (position != 0) {
+      ldout(store->ctx(), 5) << "ERROR: Append position should be zero" << dendl;
+      return ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+    } else {
+      first = true;
+      cur_part = 1;
+      head_obj.init(bucket, obj_str);
+    }
+  } else {
+    // check whether the object appendable
+    map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_APPEND_PART_NUM);
+    if (iter == attrs.end()) {
+      ldout(store->ctx(), 5) << "ERROR: The object is not appendable" << dendl;
+      return ERR_OBJECT_NOT_APPENDABLE;
+    }
+    if (position != size) {
+      ldout(store->ctx(), 5) << "ERROR: Append position should be equal to the obj size" << dendl;
+      return ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+    }
+    head_obj = stat_op.state.obj;
+    target.get_manifest(&cur_manifest);
+    decode(cur_part, iter->second);
+    cur_part_num ++;
+  }
+  manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, cur_part_num);
+  int r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, head_obj.bucket, head_obj);
+  if (r < 0) {
+    return r;
+  }
+  cur_obj = manifest_gen.get_cur_obj(store);
+  r = prepare_init(store, NULL);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
+}
+
+int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& etag,
+                  ceph::real_time *mtime, ceph::real_time set_mtime,
+                  map<string, bufferlist>& attrs, ceph::real_time delete_at,
+                  const char *if_match, const char *if_nomatch, const string *user_data,
+                  rgw_zone_set *zones_trace) {
+  int r = complete_writing_data();
+  if (r < 0)
+    return r;
+  obj_ctx.obj.set_atomic(head_obj);
+
+  RGWRados::Object op_target(store, bucket_info, obj_ctx, head_obj);
+
+  /* some object types shouldn't be versioned, e.g., multipart parts */
+  op_target.set_versioning_disabled(!versioned_object);
+
+  RGWRados::Object::Write obj_op(&op_target);
+  if (cur_manifest) {
+    cur_manifest.append(manifest, store);
+    obj_op.meta.manifest = &cur_manifest;
+  } else {
+    obj_op.meta.manifest = &manifest;
+  }
+  obj_op.meta.ptag = &unique_tag; /* use req_id as operation tag */
+  obj_op.meta.mtime = mtime;
+  obj_op.meta.set_mtime = set_mtime;
+  obj_op.meta.owner = bucket_info.owner;
+  obj_op.meta.flags = PUT_OBJ_CREATE;
+  obj_op.meta.olh_epoch = olh_epoch;
+  obj_op.meta.delete_at = delete_at;
+  obj_op.meta.user_data = user_data;
+  obj_op.meta.zones_trace = zones_trace;
+  obj_op.meta.modify_tail = true;
+  obj_op.meta.appendable = true;
+
+  //Add the append part number
+  bufferlist cur_part_num_bl;
+  encode(cur_part_num, cur_part_num_bl);
+  attrs[RGW_ATTR_APPEND_PART_NUM] = cur_part_num_bl;
+
+  r = obj_op.write_meta(obj_len, accounted_size, attrs);
+  if (r < 0) {
+    return r;
+  }
+  canceled = obj_op.meta.canceled;
+  return 0;
+
+}
+
 int RGWRados::watch(const string& oid, uint64_t *watch_handle, librados::WatchCtx2 *ctx) {
   int r = control_pool_ctx.watch2(oid, watch_handle, ctx);
   if (r < 0)
