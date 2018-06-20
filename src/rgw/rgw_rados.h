@@ -2904,7 +2904,7 @@ public:
                    uint64_t accounted_size, ceph::real_time& ut,
                    const string& etag, const string& content_type,
                    bufferlist *acl_bl, RGWObjCategory category,
-		   list<rgw_obj_index_key> *remove_objs, const string *user_data = nullptr);
+		   list<rgw_obj_index_key> *remove_objs, const string *user_data = nullptr, , bool appendable = false);
       int complete_del(int64_t poolid, uint64_t epoch,
                        ceph::real_time& removed_mtime, /* mtime of removed object */
                        list<rgw_obj_index_key> *remove_objs);

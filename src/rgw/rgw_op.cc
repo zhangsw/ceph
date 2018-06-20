@@ -3397,8 +3397,8 @@ RGWPutObjProcessor *RGWPutObj::select_processor(RGWObjectCtx& obj_ctx, bool *is_
   uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
 
   if (!multipart) {
-    if (appendable) {
-      processor = new RGWPutObjProcessor_Append(obj_ctx, s->bucket_info, part_size, s);
+    if (append) {
+      processor = new RGWPutObjProcessor_Append(obj_ctx, s->bucket_info, part_size, s, position, &cur_accounted_size);
     } else {
       processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
       (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_olh_epoch(olh_epoch);

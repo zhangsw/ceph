@@ -2466,42 +2466,57 @@ void RGWObjVersionTracker::generate_new_write_ver(CephContext *cct)
 
 
 int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
-  //get manifest
-  RGWRados::Object target(store, s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), rgw_obj(s->bucket, s->object));
-  RGWRados::Object::Read stat_op(&target);
-  stat_op.params.obj_size = &cur_size;
-  stat_op.params.attrs = &attrs;
-
-  r = stat_op.prepare();
-  if (r < 0 && r != -ENOENT) {
+  RGWObjState *astate;
+  int r = store->get_obj_state(static_cast<RGWObjectCtx *>(s->obj_ctx), bucket_info, rgw_obj(s->bucket, s->object), &astate);
+  if (r < 0) {
     return r;
-  } else if (r == -ENOENT) {
+  }
+  cur_size = astate->size;
+  *cur_accounted_size = astate->accounted_size;
+  cur_manifest = &astate->manifest;
+  if (!astate->exists) {
     if (position != 0) {
       ldout(store->ctx(), 5) << "ERROR: Append position should be zero" << dendl;
-      return ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+      return -ERR_POSITION_NOT_EQUAL_TO_LENGTH;
     } else {
-      first = true;
-      cur_part = 1;
+      cur_part_num = 1;
       head_obj.init(bucket, obj_str);
     }
   } else {
     // check whether the object appendable
     map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_APPEND_PART_NUM);
-    if (iter == attrs.end()) {
+    if (iter == astate->attrset.end()) {
       ldout(store->ctx(), 5) << "ERROR: The object is not appendable" << dendl;
-      return ERR_OBJECT_NOT_APPENDABLE;
+      return -ERR_OBJECT_NOT_APPENDABLE;
     }
-    if (position != size) {
+    if (position != *cur_accounted_size) {
       ldout(store->ctx(), 5) << "ERROR: Append position should be equal to the obj size" << dendl;
-      return ERR_POSITION_NOT_EQUAL_TO_LENGTH;
+      return -ERR_POSITION_NOT_EQUAL_TO_LENGTH;
     }
-    head_obj = stat_op.state.obj;
-    target.get_manifest(&cur_manifest);
-    decode(cur_part, iter->second);
+    head_obj = astate->obj;
+    decode(cur_part_num, iter->second);
     cur_part_num ++;
+    //get the current obj etag
+    iter = astate->attrset.find(RGW_ATTR_ETAG);
+    if (iter != astate->attrset.end()) {
+      string s = rgw_string_unquote(iter->second.c_str());
+      size_t pos = s.find("-");
+      cur_etag = s.substr(0, pos);
+    }
   }
+  //set the prefix
+  char buf[33];
+  gen_rand_alphanumeric(store->ctx(), buf, sizeof(buf) - 1);
+  string oid_prefix = obj_str;
+  oid_prefix.append(".");
+  oid_prefix.append(buf);
+  oid_prefix.append("_");
+  manifest.set_prefix(oid_prefix);
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, cur_part_num);
-  int r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, head_obj.bucket, head_obj);
+  
+  rgw_obj target_obj;
+  target_obj.init(bucket, obj_str);
+  int r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, bucket, target_obj);
   if (r < 0) {
     return r;
   }
@@ -2526,13 +2541,13 @@ int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& 
 
   RGWRados::Object op_target(store, bucket_info, obj_ctx, head_obj);
 
-  /* some object types shouldn't be versioned, e.g., multipart parts */
-  op_target.set_versioning_disabled(!versioned_object);
+  //For Append obj, disable versioning
+  op_target.set_versioning_disabled(true);
 
   RGWRados::Object::Write obj_op(&op_target);
   if (cur_manifest) {
     cur_manifest.append(manifest, store);
-    obj_op.meta.manifest = &cur_manifest;
+    obj_op.meta.manifest = cur_manifest;
   } else {
     obj_op.meta.manifest = &manifest;
   }
@@ -2541,7 +2556,6 @@ int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& 
   obj_op.meta.set_mtime = set_mtime;
   obj_op.meta.owner = bucket_info.owner;
   obj_op.meta.flags = PUT_OBJ_CREATE;
-  obj_op.meta.olh_epoch = olh_epoch;
   obj_op.meta.delete_at = delete_at;
   obj_op.meta.user_data = user_data;
   obj_op.meta.zones_trace = zones_trace;
@@ -2553,11 +2567,31 @@ int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& 
   encode(cur_part_num, cur_part_num_bl);
   attrs[RGW_ATTR_APPEND_PART_NUM] = cur_part_num_bl;
 
-  r = obj_op.write_meta(obj_len, accounted_size, attrs);
+  //calculate the etag
+  if (!cur_etag.empty()) {
+    MD5 hash;
+    char petag[CEPH_CRYPTO_MD5_DIGESTSIZE];
+    char final_etag[CEPH_CRYPTO_MD5_DIGESTSIZE];
+    char final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 16];
+    hex_to_buf(cur_etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
+    hash.Update((const byte *)petag, sizeof(petag));
+    hex_to_buf(etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
+    hash.Update((const byte *)petag, sizeof(petag));
+    hash.Final((byte *)final_etag);
+    buf_to_hex((unsigned char *)final_etag, sizeof(final_etag), final_etag_str);
+    snprintf(&final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2],  sizeof(final_etag_str) - CEPH_CRYPTO_MD5_DIGESTSIZE * 2,
+           "-%lld", (long long)cur_part_num);
+    bufferlist etag_bl;
+    etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
+    attrs[RGW_ATTR_ETAG] = etag_bl;
+  }
+
+  r = obj_op.write_meta(obj_len + cur_size, accounted_size + *cur_accounted_size, attrs);
   if (r < 0) {
     return r;
   }
   canceled = obj_op.meta.canceled;
+  *cur_accounted_size += accounted_size;
   return 0;
 
 }
@@ -6976,7 +7010,7 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
   tracepoint(rgw_rados, complete_enter, req_id.c_str());
   r = index_op->complete(poolid, epoch, size, accounted_size,
                         meta.set_mtime, etag, content_type, &acl_bl,
-                        meta.category, meta.remove_objs, meta.user_data);
+                        meta.category, meta.remove_objs, meta.user_data, meta.appendable);
   tracepoint(rgw_rados, complete_exit, req_id.c_str());
   if (r < 0)
     goto done_cancel;
@@ -9992,7 +10026,8 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
                                             const string& content_type,
                                             bufferlist *acl_bl,
                                             RGWObjCategory category,
-                                            list<rgw_obj_index_key> *remove_objs, const string *user_data)
+                                            list<rgw_obj_index_key> *remove_objs, const string *user_data,
+                                            bool appendable)
 {
   if (blind) {
     return 0;

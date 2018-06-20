@@ -104,8 +104,6 @@ using ceph::crypto::MD5;
 
 #define RGW_ATTR_COMPRESSION    RGW_ATTR_PREFIX "compression"
 
-#define RGW_ATTR_APPEND_PART_NUM    RGW_ATTR_PREFIX "append_part_num"
-
 /* IAM Policy */
 #define RGW_ATTR_IAM_POLICY	RGW_ATTR_PREFIX "iam-policy"
 #define RGW_ATTR_USER_POLICY    RGW_ATTR_PREFIX "user-policy"

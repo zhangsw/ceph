@@ -46,7 +46,9 @@ static const auto signed_subresources = {
   "versionId",
   "versioning",
   "versions",
-  "website"
+  "website",
+  "append",
+  "position"
 };
 
 /*

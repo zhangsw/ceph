@@ -252,7 +252,12 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs,
   dump_content_length(s, total_len);
   dump_last_modified(s, lastmod);
   dump_header_if_nonempty(s, "x-amz-version-id", version_id);
-
+  if (attrs.find(RGW_ATTR_APPEND_PART_NUM) != attrs.end()) {
+    dump_header(s, "x-amz-object-type", "Appendable");
+    dump_header(s, "x-amz-next-append-position", s->obj_size);
+  } else {
+    dump_header(s, "x-amz-object-type", "Normal");
+  }
   if (! op_ret) {
     if (! lo_etag.empty()) {
       /* Handle etag of Swift API's large objects (DLO/SLO). It's entirerly
@@ -751,6 +756,11 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 	s->formatter->dump_string("StorageClass", "STANDARD");
       }
       dump_owner(s, iter->meta.owner, iter->meta.owner_display_name);
+      if (iter->meta.appendable) {
+        s->formatter->dump_string("Type", "Appendable");
+      } else {
+        s->formatter->dump_string("Type", "Normal");
+      }
       s->formatter->close_section();
     }
     if (objs_container) {
@@ -827,6 +837,11 @@ void RGWListBucket_ObjStore_S3::send_response()
       dump_owner(s, iter->meta.owner, iter->meta.owner_display_name);
       if (s->system_request) {
         s->formatter->dump_string("RgwxTag", iter->tag);
+      }
+      if (iter->meta.appendable) {
+        s->formatter->dump_string("Type", "Appendable");
+      } else {
+        s->formatter->dump_string("Type", "Normal");
       }
       s->formatter->close_section();
     }
@@ -1415,14 +1430,11 @@ int RGWPutObj_ObjStore_S3::get_params()
 
   bool append = s->info.args.exists("append");
   if (append) {
-    string pos_str = s->info.args.get("Position");
+    string pos_str = s->info.args.get("position");
     if (pos_str.empty()) {
       return -EINVAL;
     } else {
       position = strtoull(pos_str.c_str(), NULL, 10);
-      if (position < 0) {
-        return -EINVAL;
-      }
     }
   }
   
@@ -1490,6 +1502,11 @@ void RGWPutObj_ObjStore_S3::send_response()
       s->formatter->close_section();
       rgw_flush_formatter_and_reset(s, s->formatter);
       return;
+    }
+  }
+  if (append) {
+    if (op_ret == 0 || op_ret == -ERR_POSITION_NOT_EQUAL_TO_LENGTH) {
+      dump_header(s, "x-amz-next-append-position", cur_accounted_size);
     }
   }
   if (s->system_request && !real_clock::is_zero(mtime)) {
