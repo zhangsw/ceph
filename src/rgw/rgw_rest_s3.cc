@@ -3235,9 +3235,8 @@ RGWOp *RGWHandler_REST_Obj_S3::op_put()
     return new RGWPutObjTags_ObjStore_S3;
   }
 
-  if (s->init_state.src_bucket.empty()) {
+  if (s->init_state.src_bucket.empty())
     return new RGWPutObj_ObjStore_S3;
-  }
   else
     return new RGWCopyObj_ObjStore_S3;
 }
