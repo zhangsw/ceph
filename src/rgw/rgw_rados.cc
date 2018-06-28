@@ -2473,7 +2473,6 @@ int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
   }
   cur_size = astate->size;
   *cur_accounted_size = astate->accounted_size;
-  cur_manifest = &astate->manifest;
   if (!astate->exists) {
     if (position != 0) {
       ldout(store->ctx(), 5) << "ERROR: Append position should be zero" << dendl;
@@ -2481,6 +2480,14 @@ int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
     } else {
       cur_part_num = 1;
       head_obj.init(bucket, obj_str);
+      //set the prefix
+      char buf[33];
+      gen_rand_alphanumeric(store->ctx(), buf, sizeof(buf) - 1);
+      string oid_prefix = obj_str;
+      oid_prefix.append(".");
+      oid_prefix.append(buf);
+      oid_prefix.append("_");
+      manifest.set_prefix(oid_prefix);
     }
   } else {
     // check whether the object appendable
@@ -2503,15 +2510,9 @@ int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
       size_t pos = s.find("-");
       cur_etag = s.substr(0, pos);
     }
+    cur_manifest = &astate->manifest;
+    manifest.set_prefix(cur_manifest->get_prefix());
   }
-  //set the prefix
-  char buf[33];
-  gen_rand_alphanumeric(store->ctx(), buf, sizeof(buf) - 1);
-  string oid_prefix = obj_str;
-  oid_prefix.append(".");
-  oid_prefix.append(buf);
-  oid_prefix.append("_");
-  manifest.set_prefix(oid_prefix);
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, cur_part_num);
   
   rgw_obj target_obj;

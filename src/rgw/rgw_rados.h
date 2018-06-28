@@ -3843,7 +3843,7 @@ public:
   RGWPutObjProcessor_Append(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s,
                             uint64_t _position, uint64_t *_cur_accounted_size) :
                    RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), 
-                   s(_s), position(_position), cur_size(0), cur_accounted_size(_cur_accounted_size) {}
+                   s(_s), position(_position), cur_size(0), cur_accounted_size(_cur_accounted_size), cur_manifest(nullptr) {}
 
 };
 
