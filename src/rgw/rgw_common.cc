@@ -948,7 +948,7 @@ void RGWHTTPArgs::append(const string& name, const string& val)
       (name.compare("torrent") == 0) ||
       (name.compare("tagging") == 0) ||
       (name.compare("append") == 0) ||
-      (name.compare("Position") == 0)) {
+      (name.compare("position") == 0)) {
     sub_resources[name] = val;
   } else if (name[0] == 'r') { // root of all evil
     if ((name.compare("response-content-type") == 0) ||

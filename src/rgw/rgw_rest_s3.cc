@@ -1428,7 +1428,7 @@ int RGWPutObj_ObjStore_S3::get_params()
     return -EINVAL;
   }
 
-  bool append = s->info.args.exists("append");
+  append = s->info.args.exists("append");
   if (append) {
     string pos_str = s->info.args.get("position");
     if (pos_str.empty()) {

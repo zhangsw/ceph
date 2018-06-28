@@ -2904,7 +2904,7 @@ public:
                    uint64_t accounted_size, ceph::real_time& ut,
                    const string& etag, const string& content_type,
                    bufferlist *acl_bl, RGWObjCategory category,
-		   list<rgw_obj_index_key> *remove_objs, const string *user_data = nullptr, , bool appendable = false);
+		   list<rgw_obj_index_key> *remove_objs, const string *user_data = nullptr, bool appendable = false);
       int complete_del(int64_t poolid, uint64_t epoch,
                        ceph::real_time& removed_mtime, /* mtime of removed object */
                        list<rgw_obj_index_key> *remove_objs);
@@ -3821,12 +3821,12 @@ public:
 
 
 class RGWPutObjProcessor_Append : public RGWPutObjProcessor_Atomic {
-  off_t position;
-  map<string, bufferlist> attrs;
-  uint64_t cur_size;
-  bool first;
   uint64_t cur_part_num;
   req_state *s;
+  uint64_t position;
+  uint64_t cur_size;
+  uint64_t *cur_accounted_size;
+  string cur_etag;
 
   RGWObjManifest *cur_manifest;
 
@@ -3840,8 +3840,10 @@ protected:
 public:
   public:
   bool immutable_head() { return true; }
-  RGWPutObjProcessor_Append(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s) :
-                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), s(_s), first(false) {}
+  RGWPutObjProcessor_Append(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s,
+                            uint64_t _position, uint64_t *_cur_accounted_size) :
+                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), 
+                   s(_s), position(_position), cur_size(0), cur_accounted_size(_cur_accounted_size) {}
 
 };
 

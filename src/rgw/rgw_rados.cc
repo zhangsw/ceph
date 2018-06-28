@@ -2484,7 +2484,7 @@ int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
     }
   } else {
     // check whether the object appendable
-    map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_APPEND_PART_NUM);
+    map<string, bufferlist>::iterator iter = astate->attrset.find(RGW_ATTR_APPEND_PART_NUM);
     if (iter == astate->attrset.end()) {
       ldout(store->ctx(), 5) << "ERROR: The object is not appendable" << dendl;
       return -ERR_OBJECT_NOT_APPENDABLE;
@@ -2516,7 +2516,7 @@ int RGWPutObjProcessor_Append::prepare(RGWRados *store, string *oid_rand) {
   
   rgw_obj target_obj;
   target_obj.init(bucket, obj_str);
-  int r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, bucket, target_obj);
+  r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, bucket, target_obj);
   if (r < 0) {
     return r;
   }
@@ -2546,7 +2546,7 @@ int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& 
 
   RGWRados::Object::Write obj_op(&op_target);
   if (cur_manifest) {
-    cur_manifest.append(manifest, store);
+    cur_manifest->append(manifest, store);
     obj_op.meta.manifest = cur_manifest;
   } else {
     obj_op.meta.manifest = &manifest;
@@ -2574,10 +2574,10 @@ int RGWPutObjProcessor_Append::do_complete(size_t accounted_size, const string& 
     char final_etag[CEPH_CRYPTO_MD5_DIGESTSIZE];
     char final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 16];
     hex_to_buf(cur_etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
-    hash.Update((const byte *)petag, sizeof(petag));
+    hash.Update((const unsigned char *)petag, sizeof(petag));
     hex_to_buf(etag.c_str(), petag, CEPH_CRYPTO_MD5_DIGESTSIZE);
-    hash.Update((const byte *)petag, sizeof(petag));
-    hash.Final((byte *)final_etag);
+    hash.Update((const unsigned char *)petag, sizeof(petag));
+    hash.Final((unsigned char *)final_etag);
     buf_to_hex((unsigned char *)final_etag, sizeof(final_etag), final_etag_str);
     snprintf(&final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2],  sizeof(final_etag_str) - CEPH_CRYPTO_MD5_DIGESTSIZE * 2,
            "-%lld", (long long)cur_part_num);
@@ -10060,6 +10060,7 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
   ent.meta.owner = owner.get_id().to_str();
   ent.meta.owner_display_name = owner.get_display_name();
   ent.meta.content_type = content_type;
+  ent.meta.appendable = appendable;
 
   ret = store->cls_obj_complete_add(*bs, obj, optag, poolid, epoch, ent, category, remove_objs, bilog_flags, zones_trace);
 
