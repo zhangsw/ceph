@@ -3560,7 +3560,7 @@ void RGWPutObj::execute()
   /* Store the placement type */
   if (!placement_type.empty()) {
     bufferlist tmp;
-    encode(placement_type, tmp);
+    tmp.append(placement_type.c_str(), placement_type.length());
     emplace_attr(RGW_ATTR_PLACEMENT_TYPE, std::move(tmp));
   }
 
