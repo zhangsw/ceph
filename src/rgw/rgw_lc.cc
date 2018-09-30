@@ -50,6 +50,18 @@ bool LCRule::valid()
       if (!elem.second.valid()) {
         return false;
       }
+      if (elem.first == STANDARD_IA) {
+        if (elem.second.has_days() && expiration.has_days()) {
+          if (elem.second.get_days() >= expiration.get_days()) {
+            return false;
+          }
+        } else if (elem.second.has_date() && expiration.has_date()) {
+          if (ceph::real_clock::to_time_t(*(ceph::from_iso_8601(elem.second.get_date()))) <= 
+            ceph::real_clock::to_time_t(*(ceph::from_iso_8601(expiration.get_date())))) {
+            return false;
+          }
+        }
+      }
       using_days = using_days || elem.second.has_days();
       using_date = using_date || elem.second.has_date();
       if (using_days && using_date) {
@@ -60,6 +72,11 @@ bool LCRule::valid()
   for (const auto& elem : noncur_transitions) {
     if (!elem.second.valid()) {
       return false;
+    }
+    if (elem.first == STANDARD_IA && noncur_expiration.has_days()) {
+      if (elem.second.get_days() >= noncur_expiration.get_days()) {
+        return false;
+      }
     }
   }
 
@@ -370,6 +387,7 @@ int RGWLC::handle_transition(RGWRados::Bucket *target, const map<string, lc_op>&
   int ret;
   bool is_truncated;
   auto delay_ms = cct->_conf.get_val<int64_t>("rgw_lc_thread_delay");
+  auto min_size = cct->_conf.get_val<int64_t>("rgw_storage_class_standard_ia_min_size");
   vector<rgw_bucket_dir_entry> objs;
   RGWBucketInfo& bucket_info = target->get_bucket_info();
   RGWRados::Bucket::List list_op(target);
@@ -441,6 +459,9 @@ int RGWLC::handle_transition(RGWRados::Bucket *target, const map<string, lc_op>&
             continue;
           }
           if (obj_iter->meta.placement_type != src_type) {
+            continue;
+          }
+          if (obj_iter->meta.accounted_size < min_size) {
             continue;
           }
           if (dst_iter->second.date != boost::none) {

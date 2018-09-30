@@ -23,6 +23,7 @@
 
 #define HASH_PRIME 7877
 #define MAX_ID_LEN 255
+#define MIN_TRANSITION_DAYS 30
 static string lc_oid_prefix = "lc";
 static string lc_index_lock_name = "lc_process";
 
@@ -126,7 +127,7 @@ public:
   bool valid() const {
     if (!days.empty() && !date.empty()) {
       return false;
-    } else if (!days.empty() && get_days() <=0) {
+    } else if (!days.empty() && get_days() < MIN_TRANSITION_DAYS) {
       return false;
     }
     //We've checked date in xml parsing
