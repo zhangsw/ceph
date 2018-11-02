@@ -209,4 +209,33 @@ class MultipartObjectProcessor : public ManifestObjectProcessor {
                rgw_zone_set *zones_trace, bool *canceled) override;
 };
 
+class AppendObjectProcessor : public ManifestObjectProcessor {
+    uint64_t cur_part_num;
+    req_state *s;
+    uint64_t position;
+    uint64_t cur_size;
+    uint64_t *cur_accounted_size;
+    string cur_etag;
+    const std::string unique_tag;
+
+    RGWObjManifest *cur_manifest;
+
+    int process_first_chunk(bufferlist&& data, DataProcessor **processor) override;
+
+public:
+    AppendObjectProcessor(Aio *aio, RGWRados *store, const RGWBucketInfo& bucket_info,
+                          const rgw_user& owner, RGWObjectCtx& obj_ctx,const rgw_obj& head_obj,
+                          req_state *_s, uint64_t _position, uint64_t *_cur_accounted_size)
+      : ManifestObjectProcessor(aio, store, bucket_info, owner, obj_ctx, head_obj),
+        s(_s), position(_position), cur_size(0), cur_accounted_size(_cur_accounted_size),
+        unique_tag(s->req_id), cur_manifest(nullptr)
+    {}
+    int prepare() override;
+    int complete(size_t accounted_size, const string& etag,
+                 ceph::real_time *mtime, ceph::real_time set_mtime,
+                 map<string, bufferlist>& attrs, ceph::real_time delete_at,
+                 const char *if_match, const char *if_nomatch, const string *user_data,
+                 rgw_zone_set *zones_trace, bool *canceled) override;
+};
+
 } // namespace rgw::putobj

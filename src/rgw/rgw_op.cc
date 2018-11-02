@@ -3255,170 +3255,6 @@ int RGWPutObj::verify_permission()
   return 0;
 }
 
-void RGWPutObjProcessor_Multipart::get_mp(RGWMPObj** _mp){
-  *_mp = &mp;
-}
-
-int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
-{
-  string oid = obj_str;
-  upload_id = s->info.args.get("uploadId");
-  if (!oid_rand) {
-    mp.init(oid, upload_id);
-  } else {
-    mp.init(oid, upload_id, *oid_rand);
-  }
-
-  part_num = s->info.args.get("partNumber");
-  if (part_num.empty()) {
-    ldpp_dout(s, 10) << "part number is empty" << dendl;
-    return -EINVAL;
-  }
-
-  string err;
-  uint64_t num = (uint64_t)strict_strtol(part_num.c_str(), 10, &err);
-
-  if (!err.empty()) {
-    ldpp_dout(s, 10) << "bad part number: " << part_num << ": " << err << dendl;
-    return -EINVAL;
-  }
-
-  string upload_prefix = oid + ".";
-
-  if (!oid_rand) {
-    upload_prefix.append(upload_id);
-  } else {
-    upload_prefix.append(*oid_rand);
-  }
-
-  rgw_obj target_obj;
-  target_obj.init(bucket, oid);
-
-  manifest.set_prefix(upload_prefix);
-
-  manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, num);
-
-  int r = manifest_gen.create_begin(store->ctx(), &manifest, s->bucket_info.placement_rule, bucket, target_obj);
-  if (r < 0) {
-    return r;
-  }
-
-  cur_obj = manifest_gen.get_cur_obj(store);
-  rgw_raw_obj_to_obj(bucket, cur_obj, &head_obj);
-  head_obj.index_hash_source = obj_str;
-
-  r = prepare_init(store, NULL);
-  if (r < 0) {
-    return r;
-  }
-
-  return 0;
-}
-
-int RGWPutObjProcessor_Multipart::do_complete(size_t accounted_size,
-                                              const string& etag,
-                                              real_time *mtime, real_time set_mtime,
-                                              map<string, bufferlist>& attrs,
-                                              real_time delete_at,
-                                              const char *if_match,
-                                              const char *if_nomatch, const string *user_data, rgw_zone_set *zones_trace)
-{
-  complete_writing_data();
-
-  RGWRados::Object op_target(store, s->bucket_info, obj_ctx, head_obj);
-  op_target.set_versioning_disabled(true);
-  RGWRados::Object::Write head_obj_op(&op_target);
-
-  head_obj_op.meta.set_mtime = set_mtime;
-  head_obj_op.meta.mtime = mtime;
-  head_obj_op.meta.owner = s->owner.get_id();
-  head_obj_op.meta.delete_at = delete_at;
-  head_obj_op.meta.zones_trace = zones_trace;
-  head_obj_op.meta.modify_tail = true;
-
-  int r = head_obj_op.write_meta(obj_len, accounted_size, attrs);
-  if (r < 0)
-    return r;
-
-  bufferlist bl;
-  RGWUploadPartInfo info;
-  string p = "part.";
-  bool sorted_omap = is_v2_upload_id(upload_id);
-
-  if (sorted_omap) {
-    string err;
-    int part_num_int = strict_strtol(part_num.c_str(), 10, &err);
-    if (!err.empty()) {
-      dout(10) << "bad part number specified: " << part_num << dendl;
-      return -EINVAL;
-    }
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%08d", part_num_int);
-    p.append(buf);
-  } else {
-    p.append(part_num);
-  }
-  info.num = atoi(part_num.c_str());
-  info.etag = etag;
-  info.size = obj_len;
-  info.accounted_size = accounted_size;
-  info.modified = real_clock::now();
-  info.manifest = manifest;
-
-  bool compressed;
-  r = rgw_compression_info_from_attrset(attrs, compressed, info.cs_info);
-  if (r < 0) {
-    dout(1) << "cannot get compression info" << dendl;
-    return r;
-  }
-
-  encode(info, bl);
-
-  string multipart_meta_obj = mp.get_meta();
-
-  rgw_obj meta_obj;
-  meta_obj.init_ns(bucket, multipart_meta_obj, mp_ns);
-  meta_obj.set_in_extra_data(true);
-
-  rgw_raw_obj raw_meta_obj;
-
-  store->obj_to_raw(s->bucket_info.placement_rule, meta_obj, &raw_meta_obj);
-  const bool must_exist = true;// detect races with abort
-  r = store->omap_set(raw_meta_obj, p, bl, must_exist);
-  return r;
-}
-
-RGWPutObjProcessor *RGWPutObj::select_processor(RGWObjectCtx& obj_ctx, bool *is_multipart)
-{
-  RGWPutObjProcessor *processor;
-
-  bool multipart = s->info.args.exists("uploadId");
-
-  uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
-
-  if (!multipart) {
-    if (append) {
-      processor = new RGWPutObjProcessor_Append(obj_ctx, s->bucket_info, part_size, s, position, &cur_accounted_size);
-    } else {
-      processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
-      (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_olh_epoch(olh_epoch);
-      (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_version_id(version_id);
-    }
-  } else {
-    processor = new RGWPutObjProcessor_Multipart(obj_ctx, s->bucket_info, part_size, s);
-  }
-
-  if (is_multipart) {
-    *is_multipart = multipart;
-  }
-
-  return processor;
-}
-
-void RGWPutObj::dispose_processor(RGWPutObjDataProcessor *processor)
-{
-  delete processor;
-}
 
 void RGWPutObj::pre_exec()
 {
@@ -3633,14 +3469,19 @@ void RGWPutObj::execute()
   // create the object processor
   using namespace rgw::putobj;
   AioThrottle aio(store->ctx()->_conf->rgw_put_obj_min_window_size);
-  constexpr auto max_processor_size = std::max(sizeof(MultipartObjectProcessor),
-                                               sizeof(AtomicObjectProcessor));
+  constexpr auto max_processor_size = std::max({sizeof(MultipartObjectProcessor),
+                                               sizeof(AtomicObjectProcessor),
+                                               sizeof(AppendObjectProcessor)});
   ceph::static_ptr<ObjectProcessor, max_processor_size> processor;
 
   if (multipart) {
     processor.emplace<MultipartObjectProcessor>(
         &aio, store, s->bucket_info, s->owner.get_id(), obj_ctx, obj,
         multipart_upload_id, multipart_part_num, multipart_part_str);
+  } else if(append) {
+    processor.emplace<AppendObjectProcessor>(
+            &aio, store, s->bucket_info, s->bucket_owner.get_id(),obj_ctx, obj,
+            s, position, &cur_accounted_size);
   } else {
     if (s->bucket_info.versioning_enabled()) {
       if (!version_id.empty()) {

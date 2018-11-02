@@ -3820,33 +3820,6 @@ public:
 }; /* RGWChainedCacheImpl */
 
 
-class RGWPutObjProcessor_Append : public RGWPutObjProcessor_Atomic {
-  uint64_t cur_part_num;
-  req_state *s;
-  uint64_t position;
-  uint64_t cur_size;
-  uint64_t *cur_accounted_size;
-  string cur_etag;
-
-  RGWObjManifest *cur_manifest;
-
-protected:
-  int prepare(RGWRados *store, string *oid_rand);
-  int do_complete(size_t accounted_size, const string& etag,
-                  ceph::real_time *mtime, ceph::real_time set_mtime,
-                  map<string, bufferlist>& attrs, ceph::real_time delete_at,
-                  const char *if_match, const char *if_nomatch, const string *user_data,
-                  rgw_zone_set *zones_trace) override;
-public:
-  public:
-  bool immutable_head() { return true; }
-  RGWPutObjProcessor_Append(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s,
-                            uint64_t _position, uint64_t *_cur_accounted_size) :
-                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), 
-                   s(_s), position(_position), cur_size(0), cur_accounted_size(_cur_accounted_size), cur_manifest(nullptr) {}
-
-};
-
 #define MP_META_SUFFIX ".meta"
 
 class RGWMPObj {
