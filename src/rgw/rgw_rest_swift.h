@@ -420,7 +420,7 @@ class RGWHandler_REST_Bucket_SWIFT : public RGWHandler_REST_SWIFT {
   boost::optional<RGWSwiftWebsiteHandler> website_handler;
 protected:
   bool is_obj_update_op() override {
-    return s->op == OP_POST;
+    return false;
   }
 
   RGWOp *get_obj_op(bool get_data);

@@ -1871,20 +1871,16 @@ int RGWHandler_REST::read_permissions(RGWOp* op_obj)
   case OP_PUT:
   case OP_POST:
   case OP_COPY:
-    /* is it a 'multi-object delete' request? */
-    if (s->info.args.exists("delete")) {
-      only_bucket = true;
-      break;
-    }
-    if (is_obj_update_op()) {
-      only_bucket = false;
-      break;
-    }
     /* is it a 'create bucket' request? */
     if (op_obj->get_type() == RGW_OP_CREATE_BUCKET)
       return 0;
-    only_bucket = true;
-    break;
+    if (is_obj_update_op()) {
+      only_bucket = false;
+      break;
+    } else {
+      only_bucket = true;
+      break;
+    }
   case OP_DELETE:
     if (!s->info.args.exists("tagging")){
       only_bucket = true;

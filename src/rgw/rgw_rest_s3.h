@@ -625,7 +625,7 @@ protected:
       return s->info.args.exists("lifecycle");
   }
   bool is_obj_update_op() override {
-    return is_acl_op() || is_cors_op();
+    return false;
   }
 
   bool is_tagging_op() {
